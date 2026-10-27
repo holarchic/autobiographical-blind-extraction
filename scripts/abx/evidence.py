@@ -69,6 +69,25 @@ def cited(node, keys: tuple[str, ...]) -> list[str]:
     return []
 
 
+def top_traits(out, cap: int):
+    """A discovery output keeping at most `cap` traits: those cited in the most distinct occurrences, then the most
+    distinct sentences, then the earliest listed, in their listed order. An output it cannot rank comes back unchanged
+    for the schema to reject."""
+    traits = out.get("traits") if isinstance(out, dict) else None
+    if not isinstance(traits, list) or len(traits) <= cap:
+        return out
+    scores = []
+    for t in traits:
+        occ = t.get("occurrences") if isinstance(t, dict) else None
+        if not isinstance(occ, list) or not all(isinstance(o, dict) and isinstance(o.get("sentence_ids"), list)
+                                                for o in occ):
+            return out
+        cited = {frozenset(s for s in o["sentence_ids"] if isinstance(s, str)) for o in occ}
+        scores.append((len(cited), len(set().union(*cited))))
+    ranked = sorted(range(len(traits)), key=lambda i: (-scores[i][0], -scores[i][1], i))
+    return {**out, "traits": [traits[i] for i in sorted(ranked[:cap])]}
+
+
 class Bar(NamedTuple):
     verdict: str
     downgrade: str | None  # why a present or absent verdict became insufficient, or None

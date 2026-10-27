@@ -316,7 +316,7 @@ def cli_version(cli: str) -> str:
 ISOLATION_POLICY = 3
 # Bumped whenever how verdicts are coded, resampled or counted, or what preparation must pass, changes, so a workspace
 # prepared under older rules can never be finished under these.
-METHOD_VERSION = 10
+METHOD_VERSION = 11
 # What a requalification compares against the baseline: any change means the lineage moved.
 FINGERPRINT_KEYS = ("cli", "cli_version", "invocation_hash", "config_hash", "isolation_policy", "method_version",
                     "resolved_model")
@@ -510,6 +510,7 @@ class CallRequest:
     slots: Mapping[str, str]
     validate: Callable[[object], list[str]] | None = None
     part: int | None = None  # a zoning chunk's or calibration excerpt's number within its era
+    trim: Callable[[object], object] | None = None  # applied to a parsed output before its schema is checked
 
     def __post_init__(self):
         object.__setattr__(self, "slots", MappingProxyType(dict(self.slots)))
@@ -547,16 +548,28 @@ def _labels(ws: store.Workspace, req: CallRequest) -> dict[str, str]:
     return labels
 
 
-def parse_output(text: str | None, schema: dict, validate) -> tuple[object, list[str]]:
+def load_output(text: str | None) -> tuple[object, list[str]]:
     if text is None:
         return None, ["no final message"]
     body = text.strip()
     if body.startswith("```"):
         body = body.strip("`").removeprefix("json").strip()
     try:
-        out = store.loads_strict(body)
+        return store.loads_strict(body), []
     except ValueError:
         return None, ["output is not JSON"]
+
+
+def parse_output(text: str | None, schema: dict, validate, trim=None) -> tuple[object, list[str]]:
+    out, problems = load_output(text)
+    if problems:
+        return None, problems
+    if trim:
+        # the whole output, whatever the trim will cut, passes the validator first
+        problems = validate(out) if validate else []
+        if problems:
+            return out, problems
+        out = trim(out)
     problems = jsonschema.errors(out, schema)
     if not problems and validate:
         problems = validate(out)
@@ -609,8 +622,9 @@ def _reusable(ws: store.Workspace, req: CallRequest, expect: dict, schema: dict)
         raise IsolationError(f"{req.identity}: its record holds a tool event; it cannot be reused")
     if state != "success":
         return None
-    _, problems = parse_output(store.canonical(rec["output"]), schema, req.validate)
-    return None if problems else rec["output"]
+    # A recorded output is already trimmed: one the trim would still change was never this call's.
+    out, problems = parse_output(store.canonical(rec["output"]), schema, req.validate, req.trim)
+    return None if problems or out != rec["output"] else rec["output"]
 
 
 def call(ws: store.Workspace, cfg: Config, req: CallRequest) -> object:
@@ -636,16 +650,19 @@ def call(ws: store.Workspace, cfg: Config, req: CallRequest) -> object:
         return reused
     for _ in range(MAX_ATTEMPTS):
         code, result = _attempt(ws, cfg, req, prompt.text, s_text, fingerprint)
-        output, problems = parse_output(result.text, s_obj, req.validate)
+        output, problems = parse_output(result.text, s_obj, req.validate, req.trim)
         if not problems:
             break
         _incident(ws, req, "invalid_output", problems[:10])
     else:
         raise CallFailed(f"{req.identity}: invalid output on all {MAX_ATTEMPTS} attempts ({problems[0]})")
+    untrimmed, _ = load_output(result.text)
     store.write_json(record_path(ws, req), {
         "attempt_id": store.sha256_text(store.canonical(expect))[:16], "identity": req.identity,
         "stage": req.stage, "role": req.role, "lineage": req.lineage, "run": req.run, "era": req.era,
         "exit": code, **expect, "output": output, "events": [asdict(e) for e in result.events],
+        # what the model returned, kept as evidence whenever the trim cut it
+        **({"untrimmed_output": untrimmed} if untrimmed != output else {}),
     })
     return output
 

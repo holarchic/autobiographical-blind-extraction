@@ -154,6 +154,33 @@ class CallTest(unittest.TestCase):
         self.call(req)  # resume reuses the resampled success
         self.assertEqual(len(self.fw.prompts_logged()), 2)
 
+    def test_a_trim_runs_before_the_schema_and_the_untrimmed_output_is_kept(self):
+        req = invoke.CallRequest(stage="test", role="probe", lineage="claude", run=1, era=None, generation="A",
+                                 slots={}, trim=lambda o: {"answer": o["answer"]})
+        with mock.patch.dict(os.environ, {"ABX_FAKE_RAW": '{"answer": "NONE", "extra": 1}'}):
+            self.assertEqual(self.call(req), {"answer": "NONE"})
+        self.assertEqual(len(self.fw.prompts_logged()), 1)
+        self.assertEqual(store.read_json(invoke.record_path(self.ws, req))["untrimmed_output"],
+                         {"answer": "NONE", "extra": 1})
+        self.call(req)  # resume reuses the trimmed record
+        self.assertEqual(len(self.fw.prompts_logged()), 1)
+
+    def test_a_record_the_trim_would_still_cut_is_not_reused(self):
+        req = _req()
+        with mock.patch.dict(os.environ, {"ABX_FAKE_RAW": '{"answer": "NONE"}'}):
+            self.call(req)
+        cut = invoke.CallRequest(stage="test", role="probe", lineage="claude", run=1, era=None, generation="A",
+                                 slots={}, trim=lambda o: {"answer": "CUT"})
+        with mock.patch.dict(os.environ, {"ABX_FAKE_RAW": '{"answer": "NONE"}'}):
+            self.assertEqual(self.call(cut), {"answer": "CUT"})
+        self.assertEqual(len(self.fw.prompts_logged()), 2)
+
+    def test_an_untouched_output_records_no_untrimmed_copy(self):
+        req = invoke.CallRequest(stage="test", role="probe", lineage="claude", run=1, era=None, generation="A",
+                                 slots={}, trim=lambda o: o)
+        self.call(req)
+        self.assertNotIn("untrimmed_output", store.read_json(invoke.record_path(self.ws, req)))
+
     def test_a_tool_event_is_never_resampled(self):
         req = _req()
         with mock.patch.dict(os.environ, {"ABX_FAKE_INVALID": "probe:1", "ABX_FAKE_TOOL_EVENT": "tool_use"}), \

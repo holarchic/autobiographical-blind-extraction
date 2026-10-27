@@ -7,6 +7,7 @@ and the temporal read by script -> integrity audit when agreement is very high (
 call is a `CallRequest` through `invoke.call`.
 """
 
+import copy
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -29,6 +30,7 @@ from . import (
     store,
     temporal,
 )
+from . import schema as jsonschema
 from .errors import AbxError, IntegrityError
 
 __all__ = ["REQUALIFICATION_AUDIT", "STAGE", "STANCES", "Context", "RaterKey", "Ratings", "Stance",
@@ -125,7 +127,19 @@ def estimate(ws: store.Workspace) -> lifecycle.Preflight:
 
 # --- discovery ---------------------------------------------------------------------------------------------------
 
+def discovery_checks(schema: dict, ix: evidence.Index, era: str) -> tuple[Callable, Callable]:
+    """One era's discovery validator and trim: every trait, kept or cut, must pass the schema bar its trait cap and
+    cite only the zoned era; the trim then keeps the most repeated."""
+    uncapped = copy.deepcopy(schema)
+    cap = uncapped["properties"]["traits"].pop("maxItems")
+
+    def validate(o) -> list[str]:
+        return jsonschema.errors(o, uncapped) or ix.outside(era, evidence.cited(o, ("sentence_ids",)))
+    return validate, lambda o: evidence.top_traits(o, cap)
+
+
 def _discovery(c: Context) -> None:
+    schema = store.loads_strict(artifacts.resolver(c.ws)("schema:discovery"))
     for lineage in c.cfg.lineages:
         for run in c.runs:
             hypotheses: list[str] = []
@@ -133,9 +147,10 @@ def _discovery(c: Context) -> None:
                 slots = {"era": f"era:{era}"}
                 if k > 0:
                     slots["hypotheses"] = f"hypotheses:{lineage}:{run}:{c.ix.era_ids[k - 1]}"
+                validate, trim = discovery_checks(schema, c.ix, era)
                 out = invoke.call(c.ws, c.cfg, invoke.CallRequest(
                     stage="extract", role="discovery", lineage=lineage, run=run, era=era, generation="B", slots=slots,
-                    validate=lambda o, era=era: c.ix.outside(era, evidence.cited(o, ("sentence_ids",)))))
+                    validate=validate, trim=trim))
                 store.write_json(artifacts.path_of(c.ws, f"discovery:{lineage}:{run}:{era}"), out)
                 hypotheses += out["hypotheses"]
                 store.write_text_atomic(artifacts.path_of(c.ws, f"hypotheses:{lineage}:{run}:{era}"),

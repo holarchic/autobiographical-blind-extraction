@@ -35,6 +35,70 @@ class RecurrenceBarTest(unittest.TestCase):
                          "absent")
 
 
+def _trait(name, *occurrences):
+    return {"trait": name, "alexander_id": "frequency",
+            "occurrences": [{"sentence_ids": list(ids)} for ids in occurrences]}
+
+
+class TopTraitsTest(unittest.TestCase):
+    def test_at_or_under_the_cap_is_untouched(self):
+        out = {"bias_memo": "m", "traits": [_trait("a", ["s00001"])] * 3, "hypotheses": []}
+        self.assertIs(evidence.top_traits(out, 3), out)
+
+    def test_keeps_the_most_repeated_in_listed_order(self):
+        traits = [_trait("once", ["s00001"]), _trait("thrice", ["s00002"], ["s00003"], ["s00004"]),
+                  _trait("twice", ["s00005"], ["s00006"]), _trait("also once", ["s00007"])]
+        out = evidence.top_traits({"bias_memo": "m", "traits": traits, "hypotheses": ["h"]}, 2)
+        self.assertEqual([t["trait"] for t in out["traits"]], ["thrice", "twice"])
+        self.assertEqual((out["bias_memo"], out["hypotheses"]), ("m", ["h"]))
+
+    def test_ties_go_to_more_distinct_sentences_then_the_earlier_listed(self):
+        traits = [_trait("first", ["s00001"]), _trait("wider", ["s00002", "s00003", "s00002"]),
+                  _trait("second", ["s00004"])]
+        out = evidence.top_traits({"traits": traits}, 2)
+        self.assertEqual([t["trait"] for t in out["traits"]], ["first", "wider"])
+
+    def test_a_repeated_citation_counts_once(self):
+        traits = [_trait("echo", ["s00001"], ["s00001"], ["s00001"]), _trait("two", ["s00002"], ["s00003"])]
+        self.assertEqual([t["trait"] for t in evidence.top_traits({"traits": traits}, 1)["traits"]], ["two"])
+
+    def test_an_unrankable_output_is_left_for_the_schema(self):
+        out = {"traits": [_trait("a", ["s00001"]), {"trait": "b"}, _trait("c", ["s00002"])]}
+        self.assertIs(evidence.top_traits(out, 2), out)
+        self.assertEqual(evidence.top_traits("not json", 2), "not json")
+
+    def test_the_prompt_states_the_schemas_cap(self):
+        cap = json.loads((FIXTURE.parents[1] / "schemas/discovery.json").read_text())["properties"]["traits"]["maxItems"]
+        self.assertIn(f"at most {cap}", (FIXTURE.parents[1] / "prompts/discovery.md").read_text())
+
+
+class DiscoveryChecksTest(unittest.TestCase):
+    """A trait the cap cuts is still checked: cutting it never hides an invalid output."""
+
+    class Ix:
+        def outside(self, era, ids):
+            return ["outside"] if "s99999" in ids else []
+
+    def parse(self, traits):
+        schema = json.loads((FIXTURE.parents[1] / "schemas/discovery.json").read_text())
+        validate, trim = extract.discovery_checks(schema, self.Ix(), "e1")
+        out = {"bias_memo": "m", "traits": traits, "hypotheses": []}
+        return invoke.parse_output(json.dumps(out), schema, validate, trim)
+
+    def test_an_over_cap_output_is_cut_to_the_most_repeated(self):
+        out, problems = self.parse([_trait(f"trait {i}", [f"s{i:05d}"], [f"s{i + 100:05d}"]) for i in range(25)]
+                                   + [_trait("weak", ["s00500"])])
+        self.assertEqual((problems, len(out["traits"])), ([], 25))
+        self.assertNotIn("weak", [t["trait"] for t in out["traits"]])
+
+    def test_an_invalid_cut_trait_still_fails(self):
+        strong = [_trait(f"trait {i}", [f"s{i:05d}"], [f"s{i + 100:05d}"]) for i in range(25)]
+        for weak in (_trait("outside", ["s99999"]), {"trait": "no citations", "alexander_id": "frequency",
+                                                       "occurrences": []}, _trait("bad id", ["x"])):
+            with self.subTest(weak=weak["trait"]):
+                self.assertNotEqual(self.parse(strong + [weak])[1], [])
+
+
 class CodebookValidatorTest(unittest.TestCase):
     def book(self, constructs, appendix=()):
         return {"constructs": [{"id": f"C{i:02d}", "name": n, "definition": "d" * 10, "sufficiency_rule": "r" * 10,
