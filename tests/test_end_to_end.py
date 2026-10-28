@@ -92,7 +92,10 @@ class EndToEndTest(unittest.TestCase):
         self.assertEqual((n["prepare"], n["freeze"], n["extract"], n["unmask"]), (0, 2, 4, 2))
         self.assertIn("Invalid outputs (failed their schema or validator; each call gets up to 3 attempts): 8 "
                       "(prepare 0, freeze 2, extract 4, unmask 2).", self.report)
-        frozen = {path for e in store.verify_manifest(self.ws) for path in e["artifacts"]}
+        self.assertIn("Outputs over a schema cap, cut by script (discovery keeps the traits with the most separate "
+                      "occurrences; the call record keeps the full output): 0 (prepare 0, freeze 0, extract 0, "
+                      "unmask 0).", self.report)
+        frozen ={path for e in store.verify_manifest(self.ws) for path in e["artifacts"]}
         incidents = {self.ws.rel(p) for p in self.ws.root.glob("run/incidents/**/*.json")}
         self.assertEqual(len(incidents), 8)
         self.assertLessEqual(incidents, frozen)

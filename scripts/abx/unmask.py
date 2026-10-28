@@ -163,6 +163,7 @@ def compute(ws: store.Workspace, cfg: config.Config) -> dict:
     facet_map = store.read_json(ws.path(facetmap.PATH))
     qualification = store.read_json(ws.path(invoke.QUALIFICATION_A))
     invalid = invoke.invalid_outputs(ws)
+    trimmed = invoke.trimmed_outputs(ws)
     return {
         "corpus": store.read_json(ws.path("prepare/stats.json")),
         "calibration": calibration.summary(store.read_json(ws.path(calibration.PATH))),
@@ -174,6 +175,7 @@ def compute(ws: store.Workspace, cfg: config.Config) -> dict:
         "foils": agree["foils"],
         "audit_flags": agree["audit_flags"],
         "invalid_outputs": {"by_stage": invalid, "total": sum(invalid.values()), "max_attempts": invoke.MAX_ATTEMPTS},
+        "trimmed_outputs": {"by_stage": trimmed, "total": sum(trimmed.values())},
         "constructs": [{"id": c["id"], "name": c["name"], "definition": c["definition"], "lineages": c["lineages"],
                         "status": agree["construct_status"][c["id"]]} for c in book["constructs"]],
         "temporal": temporal.shown(agree["temporal"]) | {"inductive_reportable": inductive_ok},

@@ -338,6 +338,15 @@ def _invalid_outputs(ws: store.Workspace) -> dict[str, int]:
             for stage, rels in stages.items()}
 
 
+def _trimmed_outputs(ws: store.Workspace) -> dict[str, int]:
+    """Counted from the call records any generation froze."""
+    manifest = [json.loads(line) for line in ws.path(store.MANIFEST).read_text().splitlines() if line.strip()]
+    records = [rel for e in manifest for rel in e["artifacts"] if rel.startswith("run/calls/")]
+    return {stage: sum(1 for rel in records if rel.startswith(f"run/calls/{stage}/")
+                       and "untrimmed_output" in json.loads(ws.path(rel).read_text()))
+            for stage in ("prepare", "freeze", "extract", "unmask")}
+
+
 def _foils(ws: store.Workspace, eras: list[str], ratings: extract.Ratings, lineages: list[str]) -> dict:
     """Kept foils re-derived from the authored foils and each era's audit, then their endorsement counted."""
     authored = {e: store.read_json(ws.path(f"prereg/foils/{e}.json"))["foils"] for e in eras}
@@ -440,6 +449,7 @@ def expected(ws: store.Workspace) -> dict:
     preds = list(seal.predictions(ws.path("sealed/self-prediction.md").read_text()))
     audit = _audit(ws, eras) if inductive.integrity_audit_due or deductive_arm.integrity_audit_due else None
     invalid = _invalid_outputs(ws)
+    trimmed = _trimmed_outputs(ws)
     lenient_arm, stances = _stances(ws, list(instrument["facets"]))
     foiled = _foils(ws, eras, ratings, lineages)
     calibrated, _ = _calibration(ws)
@@ -472,6 +482,7 @@ def expected(ws: store.Workspace) -> dict:
         "domain_names": instrument["domains"],
         "facet_names": instrument["facets"],
         "invalid_outputs": {"by_stage": invalid, "total": sum(invalid.values()), "max_attempts": 3},
+        "trimmed_outputs": {"by_stage": trimmed, "total": sum(trimmed.values())},
     }
 
 
@@ -532,6 +543,9 @@ def _rows(want: dict) -> list[str]:
     n = want["invalid_outputs"]["by_stage"]
     rows.append(f"up to 3 attempts): {sum(n.values())} (prepare {n['prepare']}, freeze {n['freeze']}, "
                 f"extract {n['extract']}, unmask {n['unmask']}).")
+    n = want["trimmed_outputs"]["by_stage"]
+    rows.append(f"the call record keeps the full output): {sum(n.values())} (prepare {n['prepare']}, "
+                f"freeze {n['freeze']}, extract {n['extract']}, unmask {n['unmask']}).")
     audit = want["agreement"]["integrity_audit"]
     if audit:
         ev, al = audit["events"]["counts"], audit["allowlist"]["counts"]

@@ -1,6 +1,6 @@
 [project]
 name = "autobiographical-blind-extraction"
-version = "0.10.0"
+version = "0.11.0"
 description = "Pre-registered, blind, two-lineage trait extraction from a diary or autobiography"
 requires-python = ">=3.10"
 dependencies = []

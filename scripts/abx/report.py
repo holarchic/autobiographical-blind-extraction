@@ -251,6 +251,10 @@ def render(r: dict) -> str:
     n = r["invalid_outputs"]
     out.append(f"- Invalid outputs (failed their schema or validator; each call gets up to {n['max_attempts']} "
                f"attempts): {n['total']} ({', '.join(f'{stage} {count}' for stage, count in n['by_stage'].items())}).")
+    n = r["trimmed_outputs"]
+    out.append(f"- Outputs over a schema cap, cut by script (discovery keeps the traits with the most separate "
+               f"occurrences; the call record keeps the full output): {n['total']} "
+               f"({', '.join(f'{stage} {count}' for stage, count in n['by_stage'].items())}).")
     audit = r["agreement"]["integrity_audit"]
     if audit:
         verdict = "every check passed" if all(c["ok"] for c in audit.values()) else "a check failed"

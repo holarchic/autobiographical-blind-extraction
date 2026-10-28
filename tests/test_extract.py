@@ -68,7 +68,8 @@ class TopTraitsTest(unittest.TestCase):
         self.assertEqual(evidence.top_traits("not json", 2), "not json")
 
     def test_the_prompt_states_the_schemas_cap(self):
-        cap = json.loads((FIXTURE.parents[1] / "schemas/discovery.json").read_text())["properties"]["traits"]["maxItems"]
+        schema = json.loads((FIXTURE.parents[1] / "schemas/discovery.json").read_text())
+        cap = schema["properties"]["traits"]["maxItems"]
         self.assertIn(f"at most {cap}", (FIXTURE.parents[1] / "prompts/discovery.md").read_text())
 
 
@@ -96,7 +97,7 @@ class DiscoveryChecksTest(unittest.TestCase):
         for weak in (_trait("outside", ["s99999"]), {"trait": "no citations", "alexander_id": "frequency",
                                                        "occurrences": []}, _trait("bad id", ["x"])):
             with self.subTest(weak=weak["trait"]):
-                self.assertNotEqual(self.parse(strong + [weak])[1], [])
+                self.assertNotEqual(self.parse([*strong, weak])[1], [])
 
 
 class CodebookValidatorTest(unittest.TestCase):

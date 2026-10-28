@@ -32,7 +32,7 @@ __all__ = ["FINGERPRINT_KEYS", "FIRST_ERA_MARKER", "ISOLATION_POLICY", "MAX_ATTE
            "call", "check_fingerprint", "check_method", "claude_argv", "claude_home", "codex_argv", "decode_events",
            "estimate_tokens", "execute", "execute_unlocked", "identity_restored", "invalid_outputs",
            "live_fingerprint", "outcome", "parse_claude", "parse_codex", "probe", "qualified", "record_path",
-           "sandbox_profile"]
+           "sandbox_profile", "trimmed_outputs"]
 
 SYSTEM_READ_ROOTS = (
     "/System", "/usr/lib", "/usr/libexec", "/usr/bin", "/usr/sbin", "/usr/share", "/bin", "/sbin",
@@ -597,6 +597,13 @@ def invalid_outputs(ws: store.Workspace) -> dict[str, int]:
     frozen = [rel for e in store.read_manifest(ws) for rel in e["artifacts"] if rel.startswith("run/incidents/")]
     return {stage: sum(1 for rel in frozen if rel.startswith(f"run/incidents/{stage}/")
                        and store.read_json(ws.path(rel))["kind"] == "invalid_output") for stage in RESAMPLED_STAGES}
+
+
+def trimmed_outputs(ws: store.Workspace) -> dict[str, int]:
+    """Outputs a request's trim cut, per stage, counted only from the call records the manifest froze."""
+    frozen = [rel for e in store.read_manifest(ws) for rel in e["artifacts"] if rel.startswith("run/calls/")]
+    return {stage: sum(1 for rel in frozen if rel.startswith(f"run/calls/{stage}/")
+                       and "untrimmed_output" in store.read_json(ws.path(rel))) for stage in RESAMPLED_STAGES}
 
 
 def _reusable(ws: store.Workspace, req: CallRequest, expect: dict, schema: dict) -> object:

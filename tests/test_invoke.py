@@ -181,6 +181,19 @@ class CallTest(unittest.TestCase):
         self.call(req)
         self.assertNotIn("untrimmed_output", store.read_json(invoke.record_path(self.ws, req)))
 
+    def test_trimmed_outputs_are_counted_from_frozen_records_only(self):
+        def req(run, trim):
+            return invoke.CallRequest(stage="extract", role="probe", lineage="claude", run=run, era=None,
+                                      generation="A", slots={}, trim=trim)
+        def cut_it(o):
+            return {"answer": "CUT"}
+        cut, untouched, late = req(1, cut_it), req(2, lambda o: o), req(3, cut_it)
+        for r in (cut, untouched):
+            self.call(r)
+        store.append_generation(self.ws, "B", [self.ws.rel(invoke.record_path(self.ws, r)) for r in (cut, untouched)])
+        self.call(late)
+        self.assertEqual(invoke.trimmed_outputs(self.ws), {"prepare": 0, "freeze": 0, "extract": 1, "unmask": 0})
+
     def test_a_tool_event_is_never_resampled(self):
         req = _req()
         with mock.patch.dict(os.environ, {"ABX_FAKE_INVALID": "probe:1", "ABX_FAKE_TOOL_EVENT": "tool_use"}), \
