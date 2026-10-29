@@ -10,14 +10,14 @@ from dataclasses import asdict, dataclass
 from .artifacts import ERA_ID
 from .errors import UsageError
 
-__all__ = ["REMOVED_MARK", "ZONING_CHUNK", "Segment", "Sentence", "as_dicts", "effective_label", "label_coverage",
-           "name_pattern", "redact", "render_numbered", "render_zoned", "segment", "sentences", "to_original",
-           "validate_eras", "zoning_chunks"]
+__all__ = ["CLOSERS", "REMOVED_MARK", "ZONING_CHUNK", "Segment", "Sentence", "as_dicts", "effective_label",
+           "label_coverage", "name_pattern", "redact", "render_numbered", "render_zoned", "segment", "sentences",
+           "to_original", "validate_eras", "zoning_chunks"]
 
 _PARAGRAPH_BREAK = re.compile(r"\n[ \t]*\n\s*")
 # A sentence ends at . ! ? (plus any closing quotes or brackets) followed by whitespace.
-_CLOSERS = "\"'\u2019\u201d)]"
-_SENTENCE_END = re.compile(rf"[.!?]+[{re.escape(_CLOSERS)}]*(?=\s)")
+CLOSERS = "\"'\u2019\u201d)]"
+_SENTENCE_END = re.compile(rf"[.!?]+[{re.escape(CLOSERS)}]*(?=\s)")
 # Tokens whose trailing full stop is not a sentence end.
 _ABBREVIATIONS = frozenset({
     "mr", "mrs", "ms", "dr", "st", "capt", "col", "gen", "rev", "esq", "jr", "sr", "vs", "etc", "&c",
@@ -116,7 +116,7 @@ def sentences(text: str, segments: list[Segment]) -> list[Sentence]:
         start = seg.start
         body = text[seg.start:seg.end]
         for m in _SENTENCE_END.finditer(body):
-            if m.group(0).rstrip(_CLOSERS) == "." and _is_abbreviation(body, m.start()):
+            if m.group(0).rstrip(CLOSERS) == "." and _is_abbreviation(body, m.start()):
                 continue
             end = seg.start + m.end()
             out.append(Sentence(f"s{len(out) + 1:05d}", seg.id, start, end))

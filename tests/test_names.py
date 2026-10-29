@@ -113,7 +113,8 @@ class MixedLanguageScanTest(unittest.TestCase):
         body = "We read [Primary source. Secondary source] twice and [Primary source. Secondary source] again."
         self.assertEqual(scanned(body), {})
         self.assertEqual(scanned("We saw [a note] Alice and [a note] Alice.")["Alice"].count, 2)
-        for label in ("[a note. Another note]", "[a note.]", "[a note!]", "[a note?]"):
+        for label in ("[a note. Another note]", "[a note.]", "[a note!]", "[a note?]", "([a note.])", "\"[a note.]\"",
+                      "“[a note.]”"):
             with self.subTest(label=label):
                 found = scanned(f"We saw {label} Alice twice and {label} Alice again.")
                 self.assertEqual(list(found), ["Alice"])
