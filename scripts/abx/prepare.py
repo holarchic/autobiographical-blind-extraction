@@ -38,9 +38,12 @@ RECEIPT_OUTPUT_GLOBS = ("prepare/redacted.txt", "prepare/offsets.json", "prepare
 REPO = Path(__file__).resolve().parents[2]
 PROPOSAL_RETRIES, PROPOSAL_SHRINK = 5, 0.10
 NAMES_NOTE = ("A local scan pre-filled this list: names seen twice or after a title, each with a placeholder "
-              "(names-preview.txt lists every candidate). Delete anything that is not a person you want hidden (a "
-              "place, an organisation), change replacements as you like, add names it missed (nicknames, lowercase "
-              "spellings, names only ever at the start of a sentence), then approve.")
+              "(names-preview.txt lists every candidate, likely places apart). Delete anything that is not a person "
+              "you want hidden (a place, an organisation), change replacements as you like, add names it missed "
+              "(nicknames, lowercase spellings, names only ever at the start of a sentence or line), then approve. "
+              "Give every name for one person (a first name, a nickname, a kinship term) the same replacement, so the "
+              "raters see one person. If the scan flags many words that are not names, list them in config.json "
+              "\"not_names\", delete this file and names-preview.txt, and run prepare again.")
 PROPOSAL_NOTE = ("This file is a proposal from headings, dated passages and size only; each era's basis says why it "
                  "starts where it does. Move the cuts to life events, and write each label yourself, without names: "
                  "labels are sent to the raters.")
@@ -97,7 +100,7 @@ def _review_files(ws: store.Workspace, cfg: config.Config, original: str) -> dic
     file again, and the receipt holds that file to the approved bytes."""
     red, era_file = ws.path("prepare/redactions.json"), ws.path("prepare/eras.json")
     if not red.exists():
-        candidates = names.scan(original, text.sentences(original, text.segment(original)))
+        candidates = names.scan(original, text.sentences(original, text.segment(original)), cfg.not_names)
         prefilled = names.prefill(candidates)
         # The preview first: an interruption leaves no redactions file, so the next run scans again.
         store.write_text_atomic(ws.path("prepare/names-preview.txt"), names.preview(candidates, prefilled))

@@ -76,6 +76,58 @@ class ScanTest(unittest.TestCase):
         self.assertEqual(scanned(body)["Tom Hart"].first_segment, "p0002")
 
 
+class MixedLanguageScanTest(unittest.TestCase):
+    """A private record partly in Turkish: line-initial function words, contractions, bracketed labels, places and
+    nationalities are not names."""
+
+    BODY = ("Sonra eve geldik\nYani biz de gittik\nBen de geldim ve Ayşe gülüyordu\nVe sonra Ayşe gitti\n\n"
+            "I said I'm sure and I've been there with Ali. We spoke Turkish at home [Primary source] and [Secondary] "
+            "at school.\n\n"
+            "We lived in Istanbul then, and I flew back to Ankara. Later we moved in Istanbul again and drove to "
+            "Ankara. We stayed in The Hague and then in The Hague again. I wrote to Ali and went with Ali. "
+            "Then Yasemin called and spoke to Yasemin's sister about Yasemin.")
+
+    def found(self, not_names=()):
+        body = self.BODY
+        return {c.name: c for c in names.scan(body, abx_text.sentences(body, abx_text.segment(body)), not_names)}
+
+    def test_candidates_equal_the_hand_table(self):
+        found = self.found()
+        self.assertEqual({n: (c.count, c.titled, c.place_like) for n, c in found.items()}, {
+            "Ayşe": (2, False, False), "Ali": (3, False, False), "Istanbul": (2, False, True),
+            "Ankara": (2, False, True), "Hague": (2, False, True), "Yasemin": (3, False, False)})
+        for absent in ("Sonra", "Yani", "Ben", "Ve", "I'm", "I've", "Primary", "Secondary", "Turkish"):
+            with self.subTest(absent=absent):
+                self.assertNotIn(absent, found)
+
+    def test_places_are_listed_apart_and_not_prefilled(self):
+        candidates = list(self.found().values())
+        filled = names.prefill(candidates)
+        self.assertEqual(set(filled), {"Ayşe", "Ali", "Yasemin"})
+        preview = names.preview(candidates, filled)
+        places = preview.split("likely places")[1].split("Seen once")[0]
+        self.assertEqual([line.split("\t")[0] for line in places.splitlines()[1:] if line],
+                         ["Ankara", "Hague", "Istanbul"])
+
+    def test_a_titled_candidate_is_never_place_like(self):
+        body = "I went to Dr. Ali twice and to Dr. Ali again."
+        found = scanned(body)
+        self.assertEqual((found["Ali"].titled, found["Ali"].place_like), (True, False))
+
+    def test_the_users_not_names_are_dropped_and_stripped(self):
+        found = self.found(not_names=("Ayşe", "Then"))
+        self.assertNotIn("Ayşe", found)
+        self.assertIn("Yasemin", found)
+        self.assertEqual(scanned("We met Bey Ali and Bey Ali.")["Bey Ali"].count, 2)
+        body = "We met Bey Ali and Bey Ali."
+        stripped = names.scan(body, abx_text.sentences(body, abx_text.segment(body)), ("Bey",))
+        self.assertEqual([c.name for c in stripped], ["Ali"])
+
+    def test_a_capital_after_a_line_break_starts_a_sentence(self):
+        self.assertEqual(scanned("we walked home\nAlice came\nwe left with Bob and Bob"), {
+            "Bob": names.Candidate("Bob", 2, False, "p0001")})
+
+
 class PrefillTest(unittest.TestCase):
     def test_threshold_titles_and_shared_placeholders(self):
         candidates = [names.Candidate("John Smith", 3, False, "p1"), names.Candidate("Brown", 1, True, "p1"),
@@ -99,6 +151,13 @@ class PrefillTest(unittest.TestCase):
         text = names.preview(candidates, names.prefill(candidates))
         self.assertIn("Ann Lee\t2\tName 1\tp0001", text)
         self.assertIn("Once\tp0002", text)
+
+
+class StandardisationTest(unittest.TestCase):
+    def test_several_names_for_one_person_share_one_replacement(self):
+        redacted, _ = abx_text.redact("Ayşe came. Ablam laughed. Ayşe abla left.",
+                                      {"Ayşe": "Sister", "Ablam": "Sister", "Ayşe abla": "Sister"})
+        self.assertEqual(redacted, "Sister came. Sister laughed. Sister left.")
 
 
 class NameAuditTest(unittest.TestCase):
@@ -146,6 +205,25 @@ class PrepareScanTest(unittest.TestCase):
         self.assertIn("local scan", doc["note"])
         self.assertIn("Collins", self.ws.path("prepare/names-preview.txt").read_text())
         self.assertEqual(self.fw.prompts_logged(), [])
+
+    def test_the_users_not_names_reach_a_fresh_scan(self):
+        cfg = store.read_json(self.ws.path("config.json"))
+        store.write_json(self.ws.path("config.json"), {**cfg, "not_names": ["Collins"]})
+        prepare.prepare(self.ws)
+        self.assertNotIn("Collins", store.read_json(self.ws.path("prepare/redactions.json"))["names"])
+        listed = [line.split("\t")[0] for line in self.ws.path("prepare/names-preview.txt").read_text().splitlines()]
+        self.assertNotIn("Collins", listed)
+        self.assertIn("John Collins", listed)  # a multi-word candidate holding the word is still listed
+
+    def test_not_names_is_optional_and_must_be_strings(self):
+        cfg = store.read_json(self.ws.path("config.json"))
+        self.assertEqual(config.parse(cfg).not_names, ())
+        legacy = {k: v for k, v in cfg.items() if k != "not_names"}
+        self.assertEqual(config.parse(legacy).not_names, ())
+        self.assertEqual(config.parse({**cfg, "not_names": ["Ben"]}).not_names, ("Ben",))
+        for bad in ("Ben", [1]):
+            with self.subTest(bad=bad), self.assertRaises(UsageError):
+                config.parse({**cfg, "not_names": bad})
 
     def test_an_existing_list_is_never_overwritten(self):
         mine = {"approved": False, "names": {"Zed": "Z."}}

@@ -103,6 +103,7 @@ def default_config(canaries: list[str]) -> dict:
         "canaries": list(canaries),
         "env_passthrough": [],
         "timeout_s": 900,
+        "not_names": [],
     }
 
 

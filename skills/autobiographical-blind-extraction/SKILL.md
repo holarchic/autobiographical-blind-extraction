@@ -36,8 +36,11 @@ synced folder.
    leave the run alone; an install replaced in place (npm), and Codex, rely on the user not upgrading.
 2. `python3 scripts/run.py prepare <ws>` — the first run writes `prepare/redactions.json`, `prepare/eras.json` and
    `prepare/segments-preview.txt`, then stops. **Review point 1:** the user reviews the third-party names a local
-   scan pre-filled (`"names": {"Full Name": "Name 1"}`; `prepare/names-preview.txt` lists every candidate): deletes
-   places and anything that isn't a person to hide, adds names it missed, checks the proposed eras (cut at headings and dated passages within the
+   scan pre-filled (`"names": {"Full Name": "Name 1"}`; `prepare/names-preview.txt` lists every candidate, likely
+   places apart): deletes places and anything that isn't a person to hide, adds names it missed, gives every name
+   for one person (first name, nickname, kinship term) the same replacement so raters see one person. If the scan
+   flags many non-names (common in text that isn't English), the user lists them in `config.json` `"not_names"`,
+   deletes `redactions.json` and `names-preview.txt`, and reruns `prepare`. Then checks the proposed eras (cut at headings and dated passages within the
    size limits; each era's `"basis"` says why), moves the cuts to life events, writes each era's label without names,
    and sets `"approved": true` in both files. The user decides the eras, not you: help them find the breaks, never
    choose for them. The `"note"` in

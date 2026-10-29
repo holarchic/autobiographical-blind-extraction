@@ -58,6 +58,7 @@ class Config:
     canaries: tuple[str, ...]
     env_passthrough: tuple[str, ...]
     timeout_s: int
+    not_names: tuple[str, ...] = ()  # the user's additions to the name scan's non-names
 
     def lineage(self, name: str) -> Lineage:
         return self.lineages[name]
@@ -125,7 +126,9 @@ def parse(obj: dict) -> Config:
         foil_author=_get(roles, "foil_author", str, "roles"), auditor=_get(roles, "auditor", str, "roles"),
         facet_mapper=_get(roles, "facet_mapper", str, "roles"),
         crosswalk_coders=_strings(roles, "crosswalk_coders", "roles"), canaries=_strings(obj, "canaries", "config"),
-        env_passthrough=_strings(obj, "env_passthrough", "config"), timeout_s=_get(obj, "timeout_s", int, "config"))
+        env_passthrough=_strings(obj, "env_passthrough", "config"), timeout_s=_get(obj, "timeout_s", int, "config"),
+        # Workspaces made before `not_names` existed have none.
+        not_names=_strings(obj, "not_names", "config") if "not_names" in obj else ())
     for who in (cfg.zoner, cfg.codebook_author, cfg.foil_author, cfg.auditor, cfg.facet_mapper):
         if who not in LINEAGES:
             raise UsageError("config.json: roles name an unknown lineage")
