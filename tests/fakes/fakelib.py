@@ -76,13 +76,14 @@ def _bump(log: Path | None, lineage: str, prompt: str) -> None:
     path.write_text(json.dumps(state))
 
 
-def _invalid_now(log: Path | None, lineage: str, prompt: str) -> bool:
-    """Whether this answer is one of the invalid ones ABX_FAKE_INVALID asks for, counting it if so."""
-    wanted = dict(item.split(":") for item in os.environ.get("ABX_FAKE_INVALID", "").split(",") if item)
+def _invalid_now(log: Path | None, lineage: str, prompt: str, env: str = "ABX_FAKE_INVALID") -> bool:
+    """Whether this answer is one of the `role:times` ones `env` asks for (invalid outputs, or output-limit
+    recoveries with ABX_FAKE_OUTPUT_LIMIT), counting it if so."""
+    wanted = dict(item.split(":") for item in os.environ.get(env, "").split(",") if item)
     times = int(wanted.get(roles.role_of(prompt), 0))
     if log is None or not times:
         return False
-    path = log / f"invalid-{lineage}.json"
+    path = log / f"{env.lower()}-{lineage}.json"
     seen = json.loads(path.read_text()) if path.exists() else {}
     key = hashlib.sha256(prompt.encode()).hexdigest()
     if seen.get(key, 0) >= times:
@@ -129,6 +130,7 @@ def main(lineage: str) -> int:
     invalid = _invalid_now(log, lineage, prompt)
     if invalid:
         text = "not json"
+    recovered = lineage == "claude" and _invalid_now(log, lineage, prompt, "ABX_FAKE_OUTPUT_LIMIT")
     if lineage == "claude" and os.environ.get("ABX_FAKE_PROFILE_FETCH"):
         profile = Path(os.environ["HOME"]) / ".claude.json"
         profile.write_text(json.dumps({"oauthAccount": {"emailAddress": "someone@example.com"}}))
@@ -146,6 +148,10 @@ def main(lineage: str) -> int:
         if injected:
             events.append(TOOL_EVENTS["claude"][injected]())
         events.append({"type": "system", "subtype": "thinking_tokens", "estimated_tokens": 50})
+        if recovered:  # Claude Code's own continuation prompt after the output-token limit, as observed
+            events.append({"type": "assistant", "message": {"content": [{"type": "text", "text": text[:5]}]}})
+            events.append({"type": "user", "message": {"role": "user", "content": [
+                {"type": "text", "text": "Output token limit hit. Resume directly, no apology, no recap."}]}})
         events.append({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}})
         events.append({"type": "rate_limit_event", "rate_limit_info": {"status": "allowed"}})
         events.append({"type": "result", "subtype": "error_during_execution" if failing else "success",
@@ -175,6 +181,6 @@ def main(lineage: str) -> int:
         time.sleep(float(os.environ["ABX_FAKE_SLEEP"]))
     if failing:
         return 1
-    if not invalid:
+    if not (invalid or recovered):
         _bump(log, lineage, prompt)
     return 0

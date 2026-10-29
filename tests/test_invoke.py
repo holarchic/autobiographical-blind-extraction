@@ -154,6 +154,33 @@ class CallTest(unittest.TestCase):
         self.call(req)  # resume reuses the resampled success
         self.assertEqual(len(self.fw.prompts_logged()), 2)
 
+    def test_an_output_limit_recovery_is_resampled_as_an_invalid_output(self):
+        req = _req()
+        with mock.patch.dict(os.environ, {"ABX_FAKE_OUTPUT_LIMIT": "probe:1"}):
+            self.assertEqual(self.call(req), {"answer": "NONE"})
+        self.assertEqual(len(self.fw.prompts_logged()), 2)
+        incident = store.read_json(self.ws.path(f"run/incidents/{req.identity}-1.json"))
+        self.assertEqual((incident["kind"], incident["detail"]), ("invalid_output", [invoke.OUTPUT_LIMIT_PROBLEM]))
+        self.assertEqual(invoke.outcome("claude", 0, invoke.decode_events(
+            store.read_json(invoke.record_path(self.ws, req))["events"])), "success")
+
+    def test_an_output_limit_recovery_on_every_attempt_exits_5(self):
+        req = _req()
+        with mock.patch.dict(os.environ, {"ABX_FAKE_OUTPUT_LIMIT": f"probe:{invoke.MAX_ATTEMPTS}"}), \
+                self.assertRaises(CallFailed) as cm:
+            self.call(req)
+        self.assertEqual(cm.exception.exit_code, 5)
+        self.assertEqual(len(self.fw.prompts_logged()), invoke.MAX_ATTEMPTS)
+        self.assertEqual([store.read_json(p)["detail"] for p in sorted(self.ws.root.glob("run/incidents/**/*.json"))],
+                         [[invoke.OUTPUT_LIMIT_PROBLEM]] * invoke.MAX_ATTEMPTS)
+        self.assertFalse(invoke.record_path(self.ws, req).exists())
+
+    def test_an_output_limit_recovery_with_a_tool_event_is_never_resampled(self):
+        with mock.patch.dict(os.environ, {"ABX_FAKE_OUTPUT_LIMIT": "probe:1", "ABX_FAKE_TOOL_EVENT": "tool_result"}), \
+                self.assertRaises(IsolationError):
+            self.call(_req())
+        self.assertEqual(len(self.fw.prompts_logged()), 1)
+
     def test_a_trim_runs_before_the_schema_and_the_untrimmed_output_is_kept(self):
         req = invoke.CallRequest(stage="test", role="probe", lineage="claude", run=1, era=None, generation="A",
                                  slots={}, trim=lambda o: {"answer": o["answer"]})
@@ -528,8 +555,72 @@ class OutputParsingTest(unittest.TestCase):
         for extra in ({"type": "system", "subtype": "hook_started"}, {"type": "rate_limit_event", "subtype": "x"}):
             with self.subTest(extra=extra):
                 out = invoke.parse_claude([init, json.dumps(extra), result])
-                self.assertEqual(invoke.audit_events("claude", out.events), ["event:system"]
-                                 if extra["type"] == "system" else ["event:rate_limit_event"])
+                self.assertEqual(invoke.audit_events("claude", out.events), ["event:system:hook_started"]
+                                 if extra["type"] == "system" else ["event:rate_limit_event:x"])
+
+    def test_unknown_subtypes_are_named_by_a_fixed_pattern_code(self):
+        init = json.dumps({"type": "system", "subtype": "init", "tools": [], "mcp_servers": [], "model": "m"})
+        cases = (({"type": "system", "subtype": "hook_started"}, "event:system:hook_started"),
+                 ({"type": "system", "subtype": "Hook-Started"}, "event:system:other"),
+                 ({"type": "system", "subtype": "a" * 41}, "event:system:other"),
+                 ({"type": "system", "subtype": 7}, "event:system:other"),
+                 ({"type": "rate_limit_event", "subtype": "x"}, "event:rate_limit_event:x"),
+                 ({"type": "stream_event"}, "event:stream_event"),
+                 ({"type": "secret-kind", "subtype": "y"}, "event:other:y"))
+        for extra, code in cases:
+            with self.subTest(extra=extra):
+                out = invoke.parse_claude([init, json.dumps(extra)])
+                self.assertEqual(invoke.audit_events("claude", out.events), [code])
+        stored = [invoke.Event("system", "Not An Identifier")]  # a record decoded from disk is re-checked
+        self.assertEqual(invoke.audit_events("claude", stored), ["event:system:other"])
+
+    def _recovery(self, user_message, result=None):
+        init = json.dumps({"type": "system", "subtype": "init", "tools": [], "mcp_servers": [], "model": "m"})
+        text = json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "{"}]}})
+        user = json.dumps({"type": "user", "message": user_message})
+        done = json.dumps(result or {"type": "result", "subtype": "success", "is_error": False, "result": "{}"})
+        return [init, text, user, text, done]
+
+    def test_a_text_only_user_event_is_an_output_limit_recovery_not_a_tool_event(self):
+        for content in ("Output token limit hit. Resume directly.",
+                        [{"type": "text", "text": "Output token limit hit."}, {"type": "text", "text": "Resume."}]):
+            with self.subTest(content=content):
+                out = invoke.parse_claude(self._recovery({"role": "user", "content": content}))
+                self.assertEqual(invoke.audit_events("claude", out.events), [])
+                self.assertEqual(invoke.outcome("claude", 0, out.events), "output_limit")
+                self.assertEqual(invoke.outcome("codex", 0, [invoke.Event("user", "text")]), "tool_event")
+
+    def test_any_other_user_event_is_a_tool_event(self):
+        for message in ({"content": [{"type": "tool_result", "tool_use_id": "t", "content": "x"}]},
+                        {"content": [{"type": "text", "text": "x"}, {"type": "tool_result"}]},
+                        {"content": [{"type": "image"}]}, {"content": [{"type": "text", "text": 1}]},
+                        {"content": []}, {"content": ""}, {"content": None}, "not a message"):
+            with self.subTest(message=message):
+                out = invoke.parse_claude(self._recovery(message))
+                self.assertEqual(invoke.audit_events("claude", out.events), ["event:user"])
+                self.assertEqual(invoke.outcome("claude", 0, out.events), "tool_event")
+
+    def test_output_limit_ranks_below_every_other_failure(self):
+        recovery = {"role": "user", "content": "Output token limit hit."}
+        events = invoke.parse_claude(self._recovery(recovery)).events
+        tool = invoke.parse_claude([*self._recovery(recovery), json.dumps(
+            {"type": "assistant", "message": {"content": [{"type": "tool_use"}]}})]).events
+        failed = invoke.parse_claude(self._recovery(recovery, {"type": "result", "subtype": "error_during_execution",
+                                                               "is_error": True, "result": "x"})).events
+        self.assertEqual(invoke.outcome("claude", 0, tool), "tool_event")
+        self.assertEqual(invoke.outcome("claude", None, events), "timeout")
+        self.assertEqual(invoke.outcome("claude", 0, failed), "failed")
+        self.assertEqual(invoke.outcome("claude", 0, events[1:]), "no_registry")
+
+    def test_qualification_allows_a_scripted_tool_result_but_not_a_recovery(self):
+        from abx import qualify
+
+        scripted = [invoke.Event("system", "init"), invoke.Event("assistant", "tool_use"), invoke.Event("user", ""),
+                    invoke.Event("assistant", "text"), invoke.Event("result", "success")]
+        self.assertNotIn("user:text", qualify.CLAUDE_SCRIPTED)
+        self.assertEqual(invoke.outcome("claude", 0, scripted, qualify.CLAUDE_SCRIPTED), "success")
+        recovered = [*scripted[:-1], invoke.Event("user", "text"), scripted[-1]]
+        self.assertEqual(invoke.outcome("claude", 0, recovered, qualify.CLAUDE_SCRIPTED), "output_limit")
 
     def test_claude_telemetry_with_a_malformed_subtype_is_a_tool_event(self):
         for extra in ({"type": "rate_limit_event", "subtype": 1}, {"type": "rate_limit_event", "subtype": {}},

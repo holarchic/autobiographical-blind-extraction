@@ -249,8 +249,9 @@ def render(r: dict) -> str:
     out.append(f"- Verdicts downgraded to insufficient by the recurrence and counter-evidence rules: "
                f"{r['agreement']['downgrades']}.")
     n = r["invalid_outputs"]
-    out.append(f"- Invalid outputs (failed their schema or validator; each call gets up to {n['max_attempts']} "
-               f"attempts): {n['total']} ({', '.join(f'{stage} {count}' for stage, count in n['by_stage'].items())}).")
+    by_stage = ", ".join(f"{stage} {count}" for stage, count in n["by_stage"].items())
+    out.append(f"- Invalid outputs (failed their schema or validator, or ran past the output limit; each call gets "
+               f"up to {n['max_attempts']} attempts): {n['total']} ({by_stage}).")
     n = r["trimmed_outputs"]
     out.append(f"- Outputs over a schema cap, cut by script (discovery keeps the traits with the most separate "
                f"occurrences; the call record keeps the full output): {n['total']} "

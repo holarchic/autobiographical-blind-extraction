@@ -573,6 +573,11 @@ class QualifyFailureTest(unittest.TestCase):
         with mock.patch.dict(os.environ, {"ABX_FAKE_LEAK": "ABXPROFILECANARY"}), self.assertRaises(IsolationError):
             qualify.leak_control(self.ws, self.fw.config, "claude")
 
+    def test_a_leak_probe_with_an_output_limit_recovery_is_an_error_not_a_pass(self):
+        with mock.patch.dict(os.environ, {"ABX_FAKE_OUTPUT_LIMIT": "probe:9"}):
+            outcome = invoke.probe(self.ws, self.fw.config, "claude", ())
+        self.assertEqual((outcome.verdict, outcome.reason), ("error", "output_limit"))
+
     def test_probe_without_init_or_final_message_never_passes(self):
         with self.assertRaises(IsolationError):
             self._qualify({"ABX_FAKE_NO_INIT": "1"})
