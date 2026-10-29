@@ -131,6 +131,37 @@ class ExcerptTest(unittest.TestCase):
         self.assertEqual([s.id for part in parts for s in part], [f"s{i:05d}" for i in range(11, 21)])
 
 
+class ParagraphContextTest(unittest.TestCase):
+    TEXT = ("Before anything.\n\nCHAPTER TWO\n\nIn 1998, 2019, 2020 and 2021 we moved.\n\n"
+            "Later I saw it plainly. It was hard.\n\nANOTHER PART\n\nNo date here at all.")
+
+    def setUp(self):
+        self.segs = abx_text.segment(self.TEXT)
+        self.sents = abx_text.sentences(self.TEXT, self.segs)
+        self.context = calibration.paragraph_context(self.TEXT, self.segs)
+
+    def test_each_paragraph_carries_the_nearest_heading_and_dated_paragraph_above_it(self):
+        years = "years in the nearest dated paragraph above: 2019, 2020, 2021"
+        self.assertEqual(list(self.context.values()), [
+            "",
+            '-- paragraph context: nearest heading above: "CHAPTER TWO" --\n',
+            f'-- paragraph context: nearest heading above: "CHAPTER TWO"; {years} --\n',
+            f'-- paragraph context: nearest heading above: "CHAPTER TWO"; {years} --\n',
+            f'-- paragraph context: nearest heading above: "ANOTHER PART"; {years} --\n',
+            f'-- paragraph context: nearest heading above: "ANOTHER PART"; {years} --\n'])
+
+    def test_the_excerpt_leads_each_paragraph_with_its_line_whichever_sentence_is_scored(self):
+        later = [s for s in self.sents if s.segment_id == self.segs[3].id]
+        rendered = [calibration.render_excerpt(self.TEXT, part, self.context)
+                    for targets in ({later[0].id}, {later[1].id})
+                    for part in calibration.excerpt_parts(self.sents, targets)]
+        self.assertEqual(rendered[0], rendered[1])
+        self.assertTrue(rendered[0].startswith(self.context[self.segs[3].id]))
+        self.assertEqual(rendered[0].count("-- paragraph context"), 1)
+        first = calibration.excerpt_parts(self.sents, {self.sents[0].id})[0]
+        self.assertTrue(calibration.render_excerpt(self.TEXT, first, self.context).startswith("[s00001]"))
+
+
 class JudgeAllowlistTest(unittest.TestCase):
     def test_a_judge_gets_only_its_eras_excerpt(self):
         prompts.check_allowlist("calibration_judge", ["excerpt:e1:1"], era="e1")
@@ -163,8 +194,12 @@ class PipelineTest(unittest.TestCase):
         sentences = {s["id"]: s for s in store.read_json(ws.path("prepare/sentences.json"))}
         for part in rec["parts"]:
             body = ws.path(f"{calibration.EXCERPTS}/{part['era']}/{part['part']}.txt").read_text()
-            self.assertEqual(body, "".join(f"[{sid}] {redacted[sentences[sid]['start']:sentences[sid]['end']]}\n"
-                                           for sid in part["sentence_ids"]))  # the text and ids, nothing else
+            # the text and ids, plus paragraph context lines, nothing else
+            context = [line for line in body.splitlines() if line.startswith("-- ")]
+            self.assertTrue(all(line.startswith("-- paragraph context: ") and line.endswith(" --") for line in context))
+            self.assertEqual("".join(line + "\n" for line in body.splitlines() if not line.startswith("-- ")),
+                             "".join(f"[{sid}] {redacted[sentences[sid]['start']:sentences[sid]['end']]}\n"
+                                     for sid in part["sentence_ids"]))
         self.assertEqual(_calibration(ws)[1], [])
         self._seal(ws)
         freeze.freeze(ws)
@@ -286,11 +321,15 @@ class PipelineTest(unittest.TestCase):
         rec = store.read_json(ws.path(calibration.PATH))
         for era in store.read_json(ws.path("prepare/eras.json"))["eras"]:
             mine = [s for s in sents if s.segment_id in set(era["segment_ids"])]
-            bound = len(sizing.longest_part(redacted, mine))
-            bodies = [abx_text.render_numbered(redacted, c) for c in abx_text.zoning_chunks(mine)]
-            bodies += [ws.path(f"{calibration.EXCERPTS}/{p['era']}/{p['part']}.txt").read_text()
-                       for p in rec["parts"] if p["era"] == era["id"]]
-            self.assertTrue(all(len(b) <= bound for b in bodies), era["id"])
+            chunks = [abx_text.render_numbered(redacted, c) for c in abx_text.zoning_chunks(mine)]
+            self.assertTrue(all(len(b) <= len(sizing.longest_part(redacted, mine)) for b in chunks), era["id"])
+            segs = {s.id: s for s in abx_text.segment(redacted)}
+            context = calibration.paragraph_context(redacted, [segs[sid] for sid in era["segment_ids"]])
+            excerpts = [ws.path(f"{calibration.EXCERPTS}/{p['era']}/{p['part']}.txt").read_text()
+                        for p in rec["parts"] if p["era"] == era["id"]]
+            bound = len(sizing.longest_part(redacted, mine, context))
+            self.assertTrue(all(len(b) <= bound for b in excerpts), era["id"])
+            self.assertTrue(any("-- paragraph context:" in b for b in excerpts), era["id"])
 
 
 if __name__ == "__main__":

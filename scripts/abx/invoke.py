@@ -346,7 +346,7 @@ def cli_version(cli: str) -> str:
 ISOLATION_POLICY = 4
 # Bumped whenever how verdicts are coded, resampled or counted, or what preparation must pass, changes, so a workspace
 # prepared under older rules can never be finished under these.
-METHOD_VERSION = 12
+METHOD_VERSION = 13
 # What a requalification compares against the baseline: any change means the lineage moved.
 FINGERPRINT_KEYS = ("cli", "cli_version", "invocation_hash", "config_hash", "isolation_policy", "method_version",
                     "resolved_model")

@@ -11,6 +11,9 @@ Rubric:
   need to prove myself", "It taught me never to trust a promise").
 - mixed: one sentence does both.
 
+A line starting `--` before a paragraph gives the nearest heading and the dates above it in the record, to help you
+tell when a sentence is written about. It is not a sentence: give it no label.
+
 Label every id below exactly once. Never quote, rewrite or summarise the text; return ids and labels only.
 Respond with only a JSON object that matches this schema:
 {{schema}}

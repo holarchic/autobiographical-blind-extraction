@@ -9,7 +9,9 @@ the era's 300 longest rendered sentences, which no chunk or excerpt part can exc
 role, and for a whole-era role also its words and the most words an era can hold.
 """
 
-from . import audit, card, config, foils, invoke, prompts, store, text
+from collections.abc import Mapping
+
+from . import audit, calibration, card, config, foils, invoke, prompts, store, text
 from .errors import TooLarge, UsageError
 from .roles import ROLES
 
@@ -114,24 +116,33 @@ def max_era_words(ws: store.Workspace, cfg: config.Config, position: int, chars_
                for lin in _lineages(cfg, role))
 
 
-def longest_part(redacted: str, era_sents: list[text.Sentence]) -> str:
-    """At least as long as any zoning chunk or calibration excerpt part of the era: its 300 longest rendered lines."""
-    lines = sorted((text.render_numbered(redacted, [s]) for s in era_sents), key=len, reverse=True)
+def longest_part(redacted: str, era_sents: list[text.Sentence], context: Mapping[str, str] | None = None) -> str:
+    """At least as long as any zoning chunk of the era (its 300 longest rendered lines) or, with the era's paragraph
+    `context`, any calibration excerpt part: each line then carries its paragraph's context line in front, which
+    over-counts a paragraph of several sentences."""
+    context = context or {}
+    lines = sorted((context.get(s.segment_id, "") + text.render_numbered(redacted, [s]) for s in era_sents), key=len,
+                   reverse=True)
     return "".join(lines[:text.ZONING_CHUNK])
 
 
 def check_eras(ws: store.Workspace, cfg: config.Config, eras: list[dict], sents: list[text.Sentence],
                redacted: str) -> None:
     era_ids = [e["id"] for e in eras]
+    segments = {seg.id: seg for seg in text.segment(redacted)}
     for position, era in enumerate(eras):
         era_sents = [s for s in sents if s.segment_id in set(era["segment_ids"])]
+        context = calibration.paragraph_context(redacted, [segments[sid] for sid in era["segment_ids"]])
+        # The judge's excerpts carry a context line per paragraph; the zoner's chunks do not.
+        parts = {"zoner": longest_part(redacted, era_sents),
+                 "calibration_judge": longest_part(redacted, era_sents, context)}
         words = sum(len(redacted[s.start:s.end].split()) for s in era_sents)
         body = text.render_zoned(redacted, era["segment_ids"], era_sents, {s.id for s in era_sents})
         label = text.effective_label(era)
         for role, policy in ROLES.items():
             if not policy.per_era:
                 continue
-            sized = longest_part(redacted, era_sents) if policy.chunked else body
+            sized = parts[role] if policy.chunked else body
             for lin in _lineages(cfg, role):
                 if _fits(prompt_for(ws, role, era_ids, position, label, sized), lin):
                     continue

@@ -1,7 +1,8 @@
 import dataclasses
 import unittest
+from unittest import mock
 
-from abx import config, init, invoke, prepare, sizing, store, text
+from abx import calibration, config, init, invoke, prepare, sizing, store, text
 from abx.errors import UsageError
 from abx.roles import ROLES
 
@@ -67,6 +68,24 @@ class EraSizeTest(unittest.TestCase):
         self.assertIn("era e1 has", str(cm.exception))
         sizing.check_eras(self.ws, _budget(self.cfg, max(self.need(r, 0, full) for r in roles)), eras, sents,
                           original)
+
+    def test_the_judges_context_lines_alone_tip_it_over(self):
+        heading = "THE FIRST PART OF A RECORD WITH A HEADING LONG ENOUGH TO MATTER"
+        original = "\n\n".join([heading] + [f"In 1801, 1802 and 1803 I went out, time {i}." for i in range(40)])
+        segs = text.segment(original)
+        eras = [{"id": "e1", "label": "", "segment_ids": [s.id for s in segs]}]
+        sents = text.sentences(original, segs)
+        context = calibration.paragraph_context(original, segs)
+        zoner = self.need("zoner", 0, sizing.longest_part(original, sents))
+        judge = self.need("calibration_judge", 0, sizing.longest_part(original, sents, context))
+        self.assertGreater(judge, zoner)
+        self.assertGreater(judge, self.need("calibration_judge", 0, sizing.longest_part(original, sents)))
+        chunked = {name: policy for name, policy in ROLES.items() if policy.chunked}  # the card roles need more
+        with mock.patch.object(sizing, "ROLES", chunked):
+            with self.assertRaises(UsageError) as cm:
+                sizing.check_eras(self.ws, _budget(self.cfg, zoner), eras, sents, original)
+            self.assertIn("calibration_judge", str(cm.exception))
+            sizing.check_eras(self.ws, _budget(self.cfg, judge), eras, sents, original)
 
     def test_the_largest_card_alone_tips_recode_over(self):
         original, eras, sents = self.corpus(1)

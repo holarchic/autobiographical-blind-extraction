@@ -16,7 +16,7 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import NamedTuple
 
-from . import artifacts, config, invoke, store, text
+from . import artifacts, config, eras, invoke, store, text
 from .errors import GateFired, UsageError
 
 __all__ = ["EXCERPTS", "LIMITS", "MIN_HELD_OUT", "PATH", "Draw", "Target", "allocate", "check", "collapse",
@@ -77,6 +77,36 @@ def sample(era_sents: Mapping[str, list[text.Sentence]], labels: Mapping[str, st
             picked[era] |= set(rng.sample(pool, alloc[era]))
             strata[era][stratum] = {"population": len(pool), "sampled": alloc[era]}
     return Draw({era: sorted(ids) for era, ids in picked.items()}, strata)
+
+
+# The years of the nearest dated paragraph shown to a judge: its last few, so the line stays short.
+CONTEXT_YEARS = 3
+
+
+def paragraph_context(redacted: str, era_segments: list[text.Segment]) -> dict[str, str]:
+    """For each paragraph of one era, the line a judge's excerpt puts before it: the nearest heading at or above it
+    and the years of the nearest dated paragraph at or above it, both within the era (a heading or dated paragraph is
+    its own nearest); "" when there is neither. It depends on the paragraph alone, never on which sentences are
+    scored, and is drawn from the redacted text."""
+    heading, years, out = "", (), {}
+    for seg, boundary in zip(era_segments, eras.candidates(redacted, era_segments), strict=True):
+        heading = boundary.heading or heading
+        years = boundary.years[-CONTEXT_YEARS:] or years
+        parts = ([f'nearest heading above: "{heading}"'] if heading else []) + \
+            ([f"years in the nearest dated paragraph above: {', '.join(map(str, years))}"] if years else [])
+        out[seg.id] = f"-- paragraph context: {'; '.join(parts)} --\n" if parts else ""
+    return out
+
+
+def render_excerpt(redacted: str, part: list[text.Sentence], context: Mapping[str, str]) -> str:
+    """An excerpt part as a judge sees it: numbered sentences, each paragraph led by its context line."""
+    out, last = [], None
+    for s in part:
+        if s.segment_id != last:
+            out.append(context[s.segment_id])
+            last = s.segment_id
+        out.append(text.render_numbered(redacted, [s]))
+    return "".join(out)
 
 
 def excerpt_parts(era_sents: list[text.Sentence], targets: set[str]) -> list[list[text.Sentence]]:
@@ -143,12 +173,15 @@ def run(ws: store.Workspace, cfg: config.Config, eras: list[dict], sents: list[t
     if ws.path(EXCERPTS).exists():
         shutil.rmtree(ws.path(EXCERPTS))
     era_sents = {e["id"]: [s for s in sents if s.segment_id in set(e["segment_ids"])] for e in eras}
+    segments = {seg.id: seg for seg in text.segment(redacted)}
+    context = {e["id"]: paragraph_context(redacted, [segments[sid] for sid in e["segment_ids"]]) for e in eras}
     draw = sample(era_sents, labels, "calibration:" + store.sha256_text(redacted))
     judged: dict[str, dict[str, str]] = {lin: {} for lin in cfg.lineages}
     parts = []
     for era, era_list in era_sents.items():
         for n, part in enumerate(excerpt_parts(era_list, set(draw.targets[era])), start=1):
-            store.write_text_atomic(artifacts.path_of(ws, f"excerpt:{era}:{n}"), text.render_numbered(redacted, part))
+            store.write_text_atomic(artifacts.path_of(ws, f"excerpt:{era}:{n}"),
+                                    render_excerpt(redacted, part, context[era]))
             ids = [s.id for s in part]
             parts.append({"era": era, "part": n, "sentence_ids": ids})
             for lin in cfg.lineages:
