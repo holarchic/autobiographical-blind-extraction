@@ -97,7 +97,8 @@ def _sightings(body: str, not_names: frozenset[str]) -> list[_Sighting]:
         elif not _capitalised(word.text):
             i += 1
             continue
-        before = body[:words[i].start].rstrip(_OPENERS)
+        # Closers too: a blanked label rejoined at a sentence start leaves only its wrapper, e.g. `(   ) Then`.
+        before = body[:words[i].start].rstrip(_OPENERS + CLOSERS)
         line_start = "\n" in body[len(before):words[i].start]
         initial = not titled and (not before or before[-1] in _CLAUSE_BREAKS or line_start)
         locative = i > 0 and words[i - 1].text in LOCATIVES and body[words[i - 1].end:words[i].start] == " "

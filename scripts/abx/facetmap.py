@@ -13,7 +13,7 @@ from . import artifacts, config, invoke, ipip, store
 
 __all__ = ["PATH", "correspondences", "render_definitions", "run", "validate"]
 
-PATH = "run/codebook/facetmap.json"  # construct id -> [{facet, polarity}], every construct a key
+PATH = "run/codebook/facetmap.json"  # construct id -> [{facet, polarity}], every trait construct a key
 RESULTS = ("consistent", "inconsistent", "neutral", "n/a")
 
 

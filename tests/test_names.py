@@ -119,9 +119,11 @@ class MixedLanguageScanTest(unittest.TestCase):
                 found = scanned(f"We saw {label} Alice twice and {label} Alice again.")
                 self.assertEqual(list(found), ["Alice"])
                 self.assertEqual(found["Alice"].count, 2)
-        # A real sentence break after a label still starts a sentence: Then is no name.
-        self.assertEqual(scanned("We left. [Later note.] Then Bob came with Bob."), {
-            "Bob": names.Candidate("Bob", 2, False, "p0001")})
+        # A real sentence break before a label, wrapped or not, still starts a sentence: Then is no name.
+        for label in ("[Later note.]", "([Later note.])", "(([Later note.]))", "“[Later note.]”", "\"[Later note.]\""):
+            with self.subTest(label=label):
+                self.assertEqual(scanned(f"We left. {label} Then Bob came with Bob."), {
+                    "Bob": names.Candidate("Bob", 2, False, "p0001")})
 
     def test_a_titled_candidate_is_never_place_like(self):
         body = "I went to Dr. Ali twice and to Dr. Ali again."
