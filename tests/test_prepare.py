@@ -163,9 +163,13 @@ class PrepareTest(unittest.TestCase):
         stamp = self.ws.path(prepare.METHOD_STAMP)
         older = {**store.read_json(stamp), "method_version": invoke.METHOD_VERSION - 1}
         store.write_json(stamp, older)
-        with mock.patch.object(prepare.shutil, "rmtree", side_effect=PermissionError("locked")), \
-                self.assertRaises(PermissionError):
-            prepare.prepare(self.ws)
+        locked = self.ws.path("prereg/prompts")
+        locked.chmod(0o500)  # its files can't be removed, so a real removal fails part-way
+        try:
+            with self.assertRaises(PermissionError):
+                prepare.prepare(self.ws)
+        finally:
+            locked.chmod(0o700)
         self.assertEqual(store.read_json(stamp), older)
         self.assertFalse(self.ws.path(invoke.QUALIFICATION).exists())
 
