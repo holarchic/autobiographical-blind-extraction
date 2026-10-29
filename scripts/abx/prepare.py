@@ -52,8 +52,10 @@ THIN, STOP = 0.50, 0.25
 ERA_RULE = ("You decide the eras, before any model call. Aim for at least 5, each a period of years with at least "
             "15k words and no more than the maximum below. Eras run in order, back to back, and every paragraph "
             "(segment) is in exactly one. Cut at life events: a move, a new school or job, a relationship starting or "
-            "ending, a birth or death, a long gap in the writing. Never cut around traits you expect to see. "
-            "segments-preview.txt gives each paragraph's word count.")
+            "ending, a birth or death, a long gap in the writing. Never cut around traits you expect to see. A view "
+            "you formed later (at 16, about your childhood) belongs to the era you formed it in: move it there in the "
+            "text, or cut it, and start a new workspace with init. segments-preview.txt gives each paragraph's word "
+            "count.")
 
 
 def stage_method(ws: store.Workspace) -> None:

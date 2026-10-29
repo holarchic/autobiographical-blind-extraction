@@ -27,7 +27,9 @@ synced folder.
 1. `python3 scripts/run.py init <ws> --text <file>... [--canary <term>...]`
    The text is plain UTF-8 `.txt` or `.md` (Markdown is read as plain text; PDF, Word and scans must be exported to
    text first), with a blank line between paragraphs. Several files are joined in the order given, so list them
-   oldest first. Canaries are words that only the user's own profile or instruction files would contain (a nickname, a test
+   oldest first. Before `init`, tell the user that a view formed after the period it describes (at 16, about their
+   childhood) belongs to the era in which they formed it: they move each such passage there, or cut it. The tool
+   can't move it, as zoning only keeps or cuts. Present-day reflection can stay; zoning removes it. Canaries are words that only the user's own profile or instruction files would contain (a nickname, a test
    result). Ask the user for two or three; the leak probe checks no rater knows them. The check is a case-insensitive
    substring match on what each CLI sends and replies, so prefer short, distinctive tokens over sentences (a model
    paraphrases), give a hyphenated token in its spaced form too, and check none appears in the text itself.
@@ -77,4 +79,4 @@ synced folder.
 | 2 | usage or preflight failure | read the message; fix and rerun |
 | 3 | isolation or leak failure | stop; show the user the message; do not work around it |
 | 4 | a frozen or sealed file changed | stop; a new run needs a new workspace |
-| 5 | a model call failed | rerun the same stage; completed calls are reused |
+| 5 | a model call failed | rerun the same stage; completed calls are reused. If one call fails with invalid output on every rerun, start a new workspace with the current version |

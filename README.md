@@ -64,13 +64,14 @@ The record and the key: [`fixtures/synthetic-memoir/`](fixtures/synthetic-memoir
 - Python 3.10+, standard library only.
 - [Claude Code](https://code.claude.com) 2.1.303+ and [Codex CLI](https://github.com/openai/codex) 0.160.1+, both logged in. Calls run on your own subscriptions: at least Max 5x / Pro, the cheap plans are unlikely to be enough.
 - Your writing: at least 100k words across 5 or more life eras of 15k words or more, each a period of years. Plain UTF-8 `.txt` or `.md`, so export PDF and Word first.
+- Later views in the era you formed them. A view formed after the period it describes (at 16, about your childhood) is evidence about you at 16. Move each such passage into that era, or cut it, before you start. The tool can't move it: zoning only keeps or cuts. Present-day reflection can stay where it is, because zoning removes it.
 
 ## Install and use
 
 Paste this into your coding agent:
 
 ```text
-Clone https://github.com/holarchic/autobiographical-blind-extraction at tag v0.12.0.
+Clone https://github.com/holarchic/autobiographical-blind-extraction at tag v0.13.0.
 Follow skills/autobiographical-blind-extraction/SKILL.md to run the blind extraction on my writing in <path>.
 Stop at each review point for me, and never open anything in the workspace's sealed/ folder.
 ```
@@ -79,7 +80,7 @@ The agent runs the steps below, stops three times for you, and never reads your 
 
 | # | Agent runs | Check |
 |---|---|---|
-| 1 | `git clone --branch v0.12.0 https://github.com/holarchic/autobiographical-blind-extraction` | `python3 scripts/run.py --version` prints `0.12.0 (<commit>)` |
+| 1 | `git clone --branch v0.13.0 https://github.com/holarchic/autobiographical-blind-extraction` | `python3 scripts/run.py --version` prints `0.13.0 (<commit>)` |
 | 2 | `python3 scripts/run.py init <ws> --text <files> --canary <tokens>` | `<ws>` sits outside any git repo or synced folder |
 | 3 | `python3 scripts/run.py prepare <ws>` | stops for review 1 |
 | 4 | `python3 scripts/run.py prepare <ws>` | exit 0, then review 2 |
@@ -105,7 +106,7 @@ Your three reviews:
 | 2 | usage or preflight failure (a missing login, a bad config, a probe that could not run) |
 | 3 | isolation or leak failure; stop, don't work around it |
 | 4 | a frozen or sealed file or a CLI changed since qualification; start a new workspace. Don't upgrade Codex mid-run |
-| 5 | a model call failed; rerun the stage and completed calls are reused |
+| 5 | a model call failed; rerun the stage and completed calls are reused. If one call fails with invalid output on every rerun, start a new workspace with the current version |
 | 70 | a harness bug; please report it |
 
 ## How it works
