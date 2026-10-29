@@ -53,6 +53,7 @@ The record and the key: [`fixtures/synthetic-memoir/`](fixtures/synthetic-memoir
 
 - how far the two model families agree, and how often they got planted test items wrong
 - each trait both found, era by era: consistent, fading, emerging, or held only by assumption
+- things that happened to you, kept apart from the traits and out of every comparison
 - how your sealed predictions matched
 - the blind estimate against your IPIP-NEO-120, by domain and facet
 - where the blind read, your predictions and your questionnaire agree and diverge
@@ -69,7 +70,7 @@ The record and the key: [`fixtures/synthetic-memoir/`](fixtures/synthetic-memoir
 Paste this into your coding agent:
 
 ```text
-Clone https://github.com/holarchic/autobiographical-blind-extraction at tag v0.11.0.
+Clone https://github.com/holarchic/autobiographical-blind-extraction at tag v0.12.0.
 Follow skills/autobiographical-blind-extraction/SKILL.md to run the blind extraction on my writing in <path>.
 Stop at each review point for me, and never open anything in the workspace's sealed/ folder.
 ```
@@ -78,7 +79,7 @@ The agent runs the steps below, stops three times for you, and never reads your 
 
 | # | Agent runs | Check |
 |---|---|---|
-| 1 | `git clone --branch v0.11.0 https://github.com/holarchic/autobiographical-blind-extraction` | `python3 scripts/run.py --version` prints `0.11.0 (<commit>)` |
+| 1 | `git clone --branch v0.12.0 https://github.com/holarchic/autobiographical-blind-extraction` | `python3 scripts/run.py --version` prints `0.12.0 (<commit>)` |
 | 2 | `python3 scripts/run.py init <ws> --text <files> --canary <tokens>` | `<ws>` sits outside any git repo or synced folder |
 | 3 | `python3 scripts/run.py prepare <ws>` | stops for review 1 |
 | 4 | `python3 scripts/run.py prepare <ws>` | exit 0, then review 2 |
