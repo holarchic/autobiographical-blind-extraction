@@ -113,9 +113,14 @@ class MixedLanguageScanTest(unittest.TestCase):
         body = "We read [Primary source. Secondary source] twice and [Primary source. Secondary source] again."
         self.assertEqual(scanned(body), {})
         self.assertEqual(scanned("We saw [a note] Alice and [a note] Alice.")["Alice"].count, 2)
-        found = scanned("We saw [a note. Another note] Alice twice and [a note. Another note] Alice again.")
-        self.assertEqual(list(found), ["Alice"])
-        self.assertEqual(found["Alice"].count, 2)
+        for label in ("[a note. Another note]", "[a note.]", "[a note!]", "[a note?]"):
+            with self.subTest(label=label):
+                found = scanned(f"We saw {label} Alice twice and {label} Alice again.")
+                self.assertEqual(list(found), ["Alice"])
+                self.assertEqual(found["Alice"].count, 2)
+        # A real sentence break after a label still starts a sentence: Then is no name.
+        self.assertEqual(scanned("We left. [Later note.] Then Bob came with Bob."), {
+            "Bob": names.Candidate("Bob", 2, False, "p0001")})
 
     def test_a_titled_candidate_is_never_place_like(self):
         body = "I went to Dr. Ali twice and to Dr. Ali again."

@@ -85,14 +85,15 @@ class Result:
     messages: list[str] = field(default_factory=list)   # every assistant text seen, for leak scans only
 
 
-# Event kinds named in diagnostics. Anything a CLI emits outside these is reported as "other", so no
-# CLI-supplied string reaches an incident, a record's audit or an error message.
+# Event kinds named in diagnostics. Anything a CLI emits outside these is reported as "other"; a subtype is kept only
+# when it has an identifier's shape (`_SUBTYPE`), so no free CLI text reaches an incident, an audit or an error.
 _CLAUDE_KNOWN_BLOCKS = frozenset({"tool_use", "server_tool_use", "web_search_tool_result", "mcp_tool_use",
                                   "mcp_tool_result", "image", "document"})
 _CLAUDE_KNOWN_EVENTS = frozenset({"user", "stream_event", "system", "rate_limit_event", "identity_restored",
                                   "unparseable"})
 # Status events a real Claude stream carries on a tool-free call, as (type, detail): the thinking-token
-# progress counter and the account's usage-window status (which has no subtype). Anything else is a tool event.
+# progress counter and the account's usage-window status (which has no subtype). With the output-limit continuation
+# below, these are the only generic events that are not tool events.
 CLAUDE_TELEMETRY = frozenset({("system", "thinking_tokens"), ("rate_limit_event", "")})
 # Claude Code's own continuation prompt when an answer hits its output-token limit: a `user` event carrying only text.
 # Not a tool event, but the answer is stitched from two turns, so the attempt is resampled as an invalid output.

@@ -120,14 +120,16 @@ def _sightings(body: str, not_names: frozenset[str]) -> list[_Sighting]:
 
 
 def _units(text: str, sentences: Sequence[Sentence], bracketed: Sequence[tuple[int, int]]) -> list[tuple[str, str]]:
-    """(segment id, text) per sentence, with a sentence that ends in a dotted title, or inside a bracketed span, joined
-    to the next one in its paragraph: the splitter ends a sentence at `Miss.` or at a full stop inside a label, but the
-    scan must see the name after it."""
+    """(segment id, text) per sentence, with a sentence that ends in a dotted title, or on punctuation inside a
+    bracketed span, joined to the next one in its paragraph: the splitter ends a sentence at `Miss.`, at `[a. b]` and,
+    taking the bracket with it, at `[a note.]`, but the scan must see the name after it."""
     units: list[tuple[str, str]] = []
     joining = False
     start = 0
+    prev_end = -1
     for sent in sentences:
-        inside = any(a < sent.start < b for a, b in bracketed)
+        inside = any(a < prev_end <= b for a, b in bracketed)
+        prev_end = sent.end
         if (joining or inside) and units and units[-1][0] == sent.segment_id:
             units[-1] = (sent.segment_id, text[start:sent.end])  # the original spacing between the two
         else:
