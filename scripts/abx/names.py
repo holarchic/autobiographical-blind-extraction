@@ -64,11 +64,8 @@ class _Word(NamedTuple):
 
 
 def _words(body: str) -> list[_Word]:
-    hidden = [m.span() for m in _BRACKETED.finditer(body)]
     out = []
     for m in _TOKEN.finditer(body):
-        if any(a < m.start() < b for a, b in hidden):
-            continue
         raw = m.group(0)
         word = raw[:-2] if raw.endswith(("'s", "’s")) else raw.rstrip("'’-")
         out.append(_Word(word, m.start(), m.end(), word != raw.rstrip("-")))
@@ -144,7 +141,10 @@ def scan(text: str, sentences: Sequence[Sentence], not_names: Sequence[str] = ()
     first: dict[str, str] = {}
     titled: set[str] = set()
     elsewhere: set[str] = set()  # seen at least once not right after a locative
-    for segment_id, body in _units(text, sentences):
+    # Blanked over the whole text, before it is cut into sentences, so a full stop inside a label cannot split it;
+    # offsets are kept, and counts read the original.
+    masked = _BRACKETED.sub(lambda m: " " * len(m.group(0)), text)
+    for segment_id, body in _units(masked, sentences):
         for seen in _sightings(body, frozenset(not_names)):
             first.setdefault(seen.name, segment_id)
             if seen.titled:

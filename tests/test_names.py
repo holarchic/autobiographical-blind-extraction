@@ -109,6 +109,11 @@ class MixedLanguageScanTest(unittest.TestCase):
         self.assertEqual([line.split("\t")[0] for line in places.splitlines()[1:] if line],
                          ["Ankara", "Hague", "Istanbul"])
 
+    def test_a_label_holding_a_full_stop_is_still_skipped(self):
+        body = "We read [Primary source. Secondary source] twice and [Primary source. Secondary source] again."
+        self.assertEqual(scanned(body), {})
+        self.assertEqual(scanned("We saw [a note] Alice and [a note] Alice.")["Alice"].count, 2)
+
     def test_a_titled_candidate_is_never_place_like(self):
         body = "I went to Dr. Ali twice and to Dr. Ali again."
         found = scanned(body)
