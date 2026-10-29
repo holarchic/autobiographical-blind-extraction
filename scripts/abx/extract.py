@@ -35,8 +35,8 @@ from .errors import AbxError, IntegrityError
 
 __all__ = ["REQUALIFICATION_AUDIT", "STAGE", "STANCES", "Context", "RaterKey", "Ratings", "Stance",
            "StanceComparison", "StanceName", "StanceUnit", "Unit", "arms", "context", "coverage", "estimate",
-           "extract", "integrity_audit", "load_ratings", "score_problems", "stance_sensitivity", "validate_codebook",
-           "with_foils"]
+           "events", "events_arm", "extract", "integrity_audit", "load_ratings", "score_problems",
+           "stance_sensitivity", "traits", "validate_codebook", "with_foils"]
 
 REQUALIFICATION_AUDIT = "run/requalification-audit.json"
 
@@ -174,6 +174,16 @@ def _pool(c: Context) -> dict[str, dict]:
 
 
 # --- codebook ----------------------------------------------------------------------------------------------------
+
+def traits(book: dict) -> list[dict]:
+    """The constructs about the writer's own conduct: the only ones the gate and the comparisons use."""
+    return [c for c in book["constructs"] if c["kind"] == "trait"]
+
+
+def events(book: dict) -> list[dict]:
+    """The constructs about what happened to the writer: recoded and reported, in no gate or comparison."""
+    return [c for c in book["constructs"] if c["kind"] == "event"]
+
 
 def validate_codebook(out: dict, refs: set[str]) -> list[str]:
     """No always-compound marker in a name, unique ids, at most 80, and every candidate placed exactly once."""
@@ -352,10 +362,10 @@ def load_ratings(ws: store.Workspace) -> Ratings:
 
 def arms(ratings: Ratings, book: dict, era_ids: list[str],
          facets: list[str]) -> tuple[agreement.ArmResult, agreement.ArmResult]:
-    """The inductive (constructs-only) and deductive (strict) arms, from named ratings. The inductive value asks
-    whether the era shows the construct: absent and insufficient verdicts, after the citation rules, are both
+    """The inductive (traits only) and deductive (strict) arms, from named ratings. The inductive value asks
+    whether the era shows the trait: absent and insufficient verdicts, after the citation rules, are both
     not_present."""
-    units = [Unit(con["item_id"], era) for con in book["constructs"] for era in era_ids]
+    units = [Unit(con["item_id"], era) for con in traits(book) for era in era_ids]
     return agreement.arm(_binary_runs(ratings), units, "nominal"), agreement.arm(_score_runs(ratings.scores), facets,
                                                                                  "ordinal")
 
@@ -385,8 +395,15 @@ def stance_sensitivity(ratings: Ratings, facets: list[str],
 
 
 def with_foils(ratings: Ratings, book: dict, kept: list[dict], era_ids: list[str]) -> agreement.ArmResult:
-    """The diagnostic arm: the inductive reading over constructs and kept foils in every era. Never a gate."""
-    units = [Unit(item["item_id"], era) for item in [*book["constructs"], *kept] for era in era_ids]
+    """A diagnostic arm: the inductive reading over traits and kept foils in every era. Never a gate."""
+    units = [Unit(item["item_id"], era) for item in [*traits(book), *kept] for era in era_ids]
+    return agreement.arm(_binary_runs(ratings), units, "nominal")
+
+
+def events_arm(ratings: Ratings, book: dict, era_ids: list[str]) -> agreement.ArmResult:
+    """A diagnostic arm: the inductive reading over events in every era. Never a gate, never an integrity trigger;
+    its collapse gives events their per-era status."""
+    units = [Unit(con["item_id"], era) for con in events(book) for era in era_ids]
     return agreement.arm(_binary_runs(ratings), units, "nominal")
 
 
@@ -411,13 +428,20 @@ def _arm_json(arm: agreement.ArmResult) -> dict:
             "units": len(arm.units), "integrity_audit_due": arm.integrity_audit_due}
 
 
+def _diagnostic_json(arm: agreement.ArmResult) -> dict:
+    return {"metric": arm.metric, "alpha": arm.alpha, "units": len(arm.units), "paired_fraction": arm.paired_fraction,
+            "raw_agreement": arm.raw_agreement, "missing_rate": arm.missing_rate}
+
+
 def _agree(c: Context, book: dict) -> dict:
     ratings = load_ratings(c.ws)
     inductive, deductive_arm = arms(ratings, book, c.ix.era_ids, list(c.facets))
+    happened = events_arm(ratings, book, c.ix.era_ids)
     lineages = sorted(inductive.collapsed)
-    status = {con["id"]: {era: agreement.status([inductive.collapsed[lin][Unit(con["item_id"], era)]
-                                                for lin in lineages]) for era in c.ix.era_ids}
-              for con in book["constructs"]}
+    # Each construct's status from its own arm's collapse: traits from the gate's, events from the events arm's.
+    collapsed = {lin: {**inductive.collapsed[lin], **happened.collapsed.get(lin, {})} for lin in lineages}
+    status = {con["id"]: {era: agreement.status([collapsed[lin][Unit(con["item_id"], era)] for lin in lineages])
+                          for era in c.ix.era_ids} for con in book["constructs"]}
     three_way = agreement.collapse_runs(_runs(ratings, lambda verdict: verdict), inductive.units,
                                         agreement.collapse_mode)
     lenient, stances = stance_sensitivity(ratings, list(c.facets), deductive_arm)
@@ -426,9 +450,10 @@ def _agree(c: Context, book: dict) -> dict:
         "inductive": _arm_json(inductive), "deductive": _arm_json(deductive_arm),
         "deductive_lenient": sensitivity, "stances": stances._asdict(),
         "construct_status": status,
-        "temporal": temporal.read(book["constructs"], status, three_way, c.ix.era_ids),
+        "temporal": temporal.read(traits(book), status, three_way, c.ix.era_ids),
         "inductive_collapsed": [{"lineage": lin, "item_id": u.item_id, "era": u.era, "value": v}
-                                for lin in lineages for u, v in inductive.collapsed[lin].items()],
+                                for lin in lineages for u, v in collapsed[lin].items()],
+        "inductive_events": _diagnostic_json(happened),
         "deductive_collapsed": [{"lineage": lin, "facet": f, "value": v} for lin in sorted(deductive_arm.collapsed)
                                 for f, v in deductive_arm.collapsed[lin].items()],
         "downgrades": sum(1 for rows in ratings.verdicts.values() for v in rows if v["downgrade"]),
@@ -448,9 +473,7 @@ def _diagnostics(c: Context, book: dict, ratings: Ratings, lineages: list[str]) 
     audited = store.read_json(c.ws.path(audit.FOILS))
     diag = with_foils(ratings, book, audited["kept"], c.ix.era_ids)
     return {
-        "inductive_with_foils": {"metric": diag.metric, "alpha": diag.alpha, "units": len(diag.units),
-                                 "paired_fraction": diag.paired_fraction, "raw_agreement": diag.raw_agreement,
-                                 "missing_rate": diag.missing_rate},
+        "inductive_with_foils": _diagnostic_json(diag),
         "foils": {"authored": sum(len(foils.load(c.ws, era)) for era in c.ix.era_ids), "dropped": audited["dropped"],
                   "endorsement": foils.endorsement(ratings.verdicts, audited["kept"], lineages)},
         "audit_flags": audit.flags(c.ws, c.ix.era_ids),
@@ -513,7 +536,7 @@ def extract(ws: store.Workspace) -> dict:
         _discovery(c)
         candidates = _pool(c)
         book = _codebook(c, candidates)
-        facetmap.run(ws, c.cfg, book["constructs"])
+        facetmap.run(ws, c.cfg, traits(book))
         _card(c, book)
         store.append_generation(ws, "B", [
             "run/discovery/pool.json", "run/discovery/pool.md", "run/codebook/codebook.json",

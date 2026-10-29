@@ -156,7 +156,8 @@ class EndToEndTest(unittest.TestCase):
         self.assertTrue(any(r["emergences"] for r in rows))
         self.assertTrue(any(r["held"] for r in rows))
         observed = {r["construct_id"] for r in rows if "observed" in r["eras"].values()}
-        supported = {c["id"] for c in self.results["constructs"] if "supported" in c["status"].values()}
+        supported = {c["id"] for c in self.results["constructs"]
+                     if c["kind"] == "trait" and "supported" in c["status"].values()}
         self.assertEqual(observed, supported)
         self.assertIn("## Over time", self.report)
 

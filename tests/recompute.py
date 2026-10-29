@@ -374,15 +374,19 @@ def _foils(ws: store.Workspace, eras: list[str], ratings: extract.Ratings, linea
             "audit_flags": dict(sorted(flags.items()))}
 
 
-def _with_foils(ratings: extract.Ratings, book: dict, kept: list[dict], eras: list[str]) -> agreement.ArmResult:
-    """The diagnostic arm rebuilt here: binary values, construct and kept-foil units in every era."""
+def _binary_arm(ratings: extract.Ratings, items: list[dict], eras: list[str]) -> agreement.ArmResult:
+    """An inductive arm rebuilt here from raw verdicts: binary values over the given items' units in every era."""
     runs: dict = {}
     for key, rows in ratings.verdicts.items():
         cell = runs.setdefault(key.lineage, {}).setdefault(key.run, {})
         for v in rows:
             cell[(v["item_id"], key.era)] = "present" if v["verdict"] == "present" else "not_present"
-    units = [(item["item_id"], era) for item in [*book["constructs"], *kept] for era in eras]
-    return agreement.arm(runs, units, "nominal")
+    return agreement.arm(runs, [(item["item_id"], era) for item in items for era in eras], "nominal")
+
+
+def _diagnostic(arm: agreement.ArmResult) -> dict:
+    return {"metric": arm.metric, "alpha": arm.alpha, "units": len(arm.units), "paired_fraction": arm.paired_fraction,
+            "raw_agreement": arm.raw_agreement, "missing_rate": arm.missing_rate}
 
 
 class _EraReading(NamedTuple):
@@ -390,8 +394,8 @@ class _EraReading(NamedTuple):
     reading: str
 
 
-def _temporal(ratings: extract.Ratings, book: dict, eras: list[str], status: dict, reportable: bool) -> dict:
-    """The temporal read, rebuilt with its own three-way collapse and its own walk over each construct's eras."""
+def _temporal(ratings: extract.Ratings, traits: list[dict], eras: list[str], status: dict, reportable: bool) -> dict:
+    """The temporal read, rebuilt with its own three-way collapse and its own walk over each trait's eras."""
     votes: dict = {}
     for key, rows in ratings.verdicts.items():
         for v in rows:
@@ -404,7 +408,7 @@ def _temporal(ratings: extract.Ratings, book: dict, eras: list[str], status: dic
                 and (len(counts) == 1 or counts[1][1] < counts[0][1]))
 
     rows = []
-    for con in book["constructs"]:
+    for con in traits:
         seq = ["observed" if status[con["id"]][e] == "supported"
                else "contradicted" if all(absent(lin, con["item_id"], e) for lin in lineages) else None for e in eras]
         decisive = [_EraReading(e, r) for e, r in zip(eras, seq, strict=True) if r]
@@ -426,7 +430,7 @@ def _temporal(ratings: extract.Ratings, book: dict, eras: list[str], status: dic
         if any(seq):
             rows.append({"construct_id": con["id"], "eras": dict(zip(eras, seq, strict=True)), "fades": fades,
                          "emergences": emergences, "held": held, "now": now})
-    return {"constructs": rows, "undecided": len(book["constructs"]) - len(rows), "inductive_reportable": reportable}
+    return {"constructs": rows, "undecided": len(traits) - len(rows), "inductive_reportable": reportable}
 
 
 def expected(ws: store.Workspace) -> dict:
@@ -435,16 +439,21 @@ def expected(ws: store.Workspace) -> dict:
     book = store.read_json(ws.path("run/codebook/codebook.json"))
     eras = [e["id"] for e in store.read_json(ws.path("prepare/eras.json"))["eras"]]
     instrument = ipip.load_instrument(ws)
-    inductive, deductive_arm = extract.arms(extract.load_ratings(ws), book, eras, list(instrument["facets"]))
     ratings = extract.load_ratings(ws)
+    _, deductive_arm = extract.arms(ratings, book, eras, list(instrument["facets"]))
+    # The gate and the events arm rebuilt from the codebook's own tags, not from extract's selection.
+    traits = [c for c in book["constructs"] if c["kind"] == "trait"]
+    inductive = _binary_arm(ratings, traits, eras)
+    happened = _binary_arm(ratings, [c for c in book["constructs"] if c["kind"] == "event"], eras)
     lineages = sorted(inductive.collapsed)
-    status = {c["id"]: {e: agreement.status([inductive.collapsed[lin][extract.Unit(c["item_id"], e)]
-                                            for lin in lineages]) for e in eras} for c in book["constructs"]}
+    collapsed = {lin: {**inductive.collapsed[lin], **happened.collapsed.get(lin, {})} for lin in lineages}
+    status = {c["id"]: {e: agreement.status([collapsed[lin][(c["item_id"], e)] for lin in lineages]) for e in eras}
+              for c in book["constructs"]}
     collapsed = [{"lineage": lin, "facet": f, "value": v}
                  for lin in sorted(deductive_arm.collapsed) for f, v in deductive_arm.collapsed[lin].items()]
     self_report = ipip.score(ipip.parse_responses(ws.path("sealed/ipip-120.csv").read_text(), instrument), instrument)
     inductive_ok = inductive.verdict in unmask.REPORTABLE
-    supported = {cid for cid, by_era in status.items() if "supported" in by_era.values()}
+    supported = {cid for cid, by_era in status.items() if "supported" in by_era.values()} & {c["id"] for c in traits}
     codes = {c: store.read_json(ws.path(f"run/crosswalk/codes-{c}.json"))["codes"] for c in cfg.crosswalk_coders}
     preds = list(seal.predictions(ws.path("sealed/self-prediction.md").read_text()))
     audit = _audit(ws, eras) if inductive.integrity_audit_due or deductive_arm.integrity_audit_due else None
@@ -453,7 +462,7 @@ def expected(ws: store.Workspace) -> dict:
     lenient_arm, stances = _stances(ws, list(instrument["facets"]))
     foiled = _foils(ws, eras, ratings, lineages)
     calibrated, _ = _calibration(ws)
-    diag = _with_foils(ratings, book, foiled["kept"], eras)
+    diag = _binary_arm(ratings, [*traits, *foiled["kept"]], eras)
     return {
         "corpus": _corpus(ws),
         "calibration": calibrated,
@@ -464,14 +473,12 @@ def expected(ws: store.Workspace) -> dict:
                       "deductive_lenient": lenient_arm, "stances": stances,
                       "downgrades": sum(1 for rows in ratings.verdicts.values() for v in rows if v["downgrade"]),
                       "integrity_audit": audit,
-                      "inductive_with_foils": {"metric": diag.metric, "alpha": diag.alpha, "units": len(diag.units),
-                                               "paired_fraction": diag.paired_fraction,
-                                               "raw_agreement": diag.raw_agreement, "missing_rate": diag.missing_rate}},
+                      "inductive_with_foils": _diagnostic(diag), "inductive_events": _diagnostic(happened)},
         "foils": foiled["foils"],
         "audit_flags": foiled["audit_flags"],
-        "constructs": [{"id": c["id"], "name": c["name"], "definition": c["definition"], "lineages": c["lineages"],
-                        "status": status[c["id"]]} for c in book["constructs"]],
-        "temporal": _temporal(ratings, book, eras, status, inductive_ok),
+        "constructs": [{"id": c["id"], "name": c["name"], "kind": c["kind"], "definition": c["definition"],
+                        "lineages": c["lineages"], "status": status[c["id"]]} for c in book["constructs"]],
+        "temporal": _temporal(ratings, traits, eras, status, inductive_ok),
         "predictions": unmask.prediction_rates(codes, preds, supported if inductive_ok else set())
         | {"inductive_reportable": inductive_ok},
         "facet_bands": _facet_bands(deductive_arm.collapsed, self_report, instrument),
@@ -511,7 +518,7 @@ def _rows(want: dict) -> list[str]:
         rows.append(f"- Era {era}: {st['sentences']} sentences in {st['segments']} segments; zoning kept "
                     f"{_pct(st['kept_ratio'])} of {st['words']} words ({st['band']}); {st['mixed']} mixed and "
                     f"{st['removed']} reflective sentences removed.")
-    for label, key in (("Inductive constructs", "inductive"), ("Deductive facets (strict)", "deductive")):
+    for label, key in (("Inductive traits", "inductive"), ("Deductive facets (strict)", "deductive")):
         a = want["agreement"][key]
         rows.append(f"- **{label}** ({a['metric']}, {a['units']} units): α = {_num(a['alpha'])}, ")
         rows.append(f"  - Units with both lineages: {_pct(a['paired_fraction'])}; raw agreement on them: "
@@ -555,9 +562,10 @@ def _rows(want: dict) -> list[str]:
                     if audit["allowlist"]["ok"] else f"allowlist: {al['outside']} of {al['records']} call records")
         generations = audit["manifest"]["counts"]["generations"]
         rows.append(f"manifest: manifest chain verified across {generations} generations")
-    d = want["agreement"]["inductive_with_foils"]
-    rows.append(f"- Constructs plus foils (diagnostic, not a gate; {d['units']} units): α = {_num(d['alpha'])}; units "
-                f"with both lineages: {_pct(d['paired_fraction'])}; raw agreement on them: {_pct(d['raw_agreement'])}.")
+    for key, label in (("inductive_with_foils", "Traits plus foils"), ("inductive_events", "Events")):
+        d = want["agreement"][key]
+        rows.append(f"- {label} (diagnostic, not a gate; {d['units']} units): α = {_num(d['alpha'])}; units with both "
+                    f"lineages: {_pct(d['paired_fraction'])}; raw agreement on them: {_pct(d['raw_agreement'])}.")
     f = want["foils"]
     rows.append(f"- Foils written: {f['authored']}; dropped by the audit as unclear: "
                 + (", ".join(f"{d['era']} {d['id']}" for d in f["dropped"]) or "none") + ".")

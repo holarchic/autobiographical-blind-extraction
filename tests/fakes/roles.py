@@ -15,12 +15,19 @@ ROLE_LINE = re.compile(r"^# abx-role: ([a-z_]+)", re.M)
 SENT = re.compile(r"^\[(s\d{5})\]", re.M)
 TRAITS = ["Thrift with money", "Love of reading", "Drive to argue", "Self-directed study", "Resentment of authority",
           "Practical ingenuity", "Concern for reputation", "Willingness to leave home"]
+# Things that happened to the writer, not traits: both lineages discover them and the codebook author tags them
+# events, so they are recoded and reported but kept out of the gate and every comparison. Both lineages agree on them
+# in every era, so the events alpha is 1 while the gates are not. ABX_FAKE_KINDS=all_events or all_traits tags every
+# construct one way, for the empty-side cases.
+EVENTS = ["Death of a parent", "Serious illness"]
 FACETS = [f"{d}{i}" for d in "NEOAC" for i in range(1, 7)]
 # Verdicts in the first era and in every later one, for both lineages and every run, so the temporal read has a fade,
 # an emergence and a held era whatever the hashes give.
 TRAJECTORIES = {"Thrift with money": {"first": "present", "later": "absent"},
                 "Concern for reputation": {"first": "absent", "later": "present"},
-                "Willingness to leave home": {"first": "present", "later": "insufficient"}}
+                "Willingness to leave home": {"first": "present", "later": "insufficient"},
+                "Death of a parent": {"first": "present", "later": "present"},
+                "Serious illness": {"first": "present", "later": "absent"}}
 
 
 def h(*parts) -> int:
@@ -54,7 +61,7 @@ def _two_episodes(segs: list[list[str]]) -> list[dict]:
 
 def discovery(prompt, lineage, occurrence):
     segs = segments(prompt)
-    names = TRAITS[:6] if lineage == "claude" else TRAITS[2:]
+    names = (TRAITS[:6] if lineage == "claude" else TRAITS[2:]) + EVENTS
     return {"bias_memo": "I lean toward reading recurring conduct as disposition.",
             "traits": [{"trait": n, "alexander_id": "frequency", "occurrences": _two_episodes(segs)} for n in names],
             "hypotheses": [f"The next era will show more {names[0].lower()}."]}
@@ -64,7 +71,12 @@ def codebook_author(prompt, lineage, occurrence):
     groups: dict[str, list[str]] = {}
     for ref, trait, _ in re.findall(r"^(c\d{3,4}) \| (.+?) \| (\w+)$", prompt, re.M):
         groups.setdefault(trait, []).append(ref)
-    return {"constructs": [{"id": f"C{i + 1:02d}", "name": trait, "definition": f"Shows {trait.lower()} in conduct.",
+    kinds = os.environ.get("ABX_FAKE_KINDS")
+
+    def kind(trait):
+        return "event" if kinds == "all_events" or (kinds != "all_traits" and trait in EVENTS) else "trait"
+    return {"constructs": [{"id": f"C{i + 1:02d}", "name": trait, "kind": kind(trait),
+                            "definition": f"Shows {trait.lower()} in conduct.",
                             "sufficiency_rule": f"Two separate episodes of {trait.lower()}.", "trace": refs}
                            for i, (trait, refs) in enumerate(groups.items())],
             "appendix": []}

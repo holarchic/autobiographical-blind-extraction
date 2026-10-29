@@ -1,3 +1,4 @@
+import re
 import unittest
 from fractions import Fraction
 
@@ -90,7 +91,8 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(stored, {m["construct_id"]: m["facets"] for m in rec["output"]["constructs"]})
         self.assertTrue(any(len(v) > 1 for v in stored.values()) and any(not v for v in stored.values()))
         book = store.read_json(ws.path("run/codebook/codebook.json"))
-        self.assertEqual(list(stored), [c["id"] for c in book["constructs"]])
+        self.assertEqual(list(stored), [c["id"] for c in book["constructs"] if c["kind"] == "trait"])
+        self.assertTrue(any(c["kind"] == "event" for c in book["constructs"]))  # the event is never mapped
 
     def test_rows_stay_under_a_descriptive_notice_when_the_inductive_arm_is_not_reportable(self):
         results = store.read_json(self.ws.path("report/results.json"))
@@ -100,7 +102,7 @@ class PipelineTest(unittest.TestCase):
             r = {**results, "correspondences": {**results["correspondences"], "inductive_reportable": reportable}}
             section = report.render(r).split("## Constructs against your IPIP facets")[1].split("## Limits")[0]
             self.assertEqual(notice in section, not reportable)
-            self.assertEqual(section.count("\n| C0"), len(results["correspondences"]["rows"]))
+            self.assertEqual(len(re.findall(r"^\| C\d", section, re.M)), len(results["correspondences"]["rows"]))
 
 
 if __name__ == "__main__":

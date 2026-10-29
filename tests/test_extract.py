@@ -178,7 +178,7 @@ class InductiveArmTest(unittest.TestCase):
         verdicts = {extract.RaterKey(lin, run, "e1"): tuple({"item_id": f"K00000{i + 1}", "verdict": v}
                                                             for i, v in enumerate(vs))
                     for (lin, run), vs in by_rater.items()}
-        book = {"constructs": [{"item_id": f"K00000{i}"} for i in (1, 2, 3)]}
+        book = {"constructs": [{"item_id": f"K00000{i}", "kind": "trait"} for i in (1, 2, 3)]}
         return extract.arms(extract.Ratings(verdicts, {}, {}), book, ["e1"], [])[0]
 
     def test_absent_and_insufficient_both_map_to_not_present_before_collapse(self):

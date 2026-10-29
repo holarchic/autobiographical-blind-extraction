@@ -112,7 +112,7 @@ class FoilRatesTest(unittest.TestCase):
                     rows[(lin, run, era)] = {i: ("present" if v[side] == "present" else "absent")
                                              for i, v in {**constructs, **foil_items}.items()}
         ratings = _ratings(rows)
-        book = {"constructs": [{"item_id": i} for i in constructs]}
+        book = {"constructs": [{"item_id": i, "kind": "trait"} for i in constructs]}
         gate, _ = extract.arms(ratings, book, ["e1", "e2"], [])
         pooled = extract.with_foils(ratings, book, [{"item_id": i} for i in foil_items], ["e1", "e2"])
         self.assertEqual((len(gate.units), len(pooled.units)), (6, 66))

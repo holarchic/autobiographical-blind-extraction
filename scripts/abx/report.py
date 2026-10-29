@@ -9,7 +9,7 @@ __all__ = ["render"]
 
 VERDICT_TEXT = MappingProxyType({"report": f"reportable (α ≥ {REPORT:.2f})",
                 "tentative": f"tentative ({TENTATIVE:.3f} ≤ α < {REPORT:.2f})", "not_reportable": "not reportable"})
-REASON_TEXT = MappingProxyType({"no_units": "there is nothing to rate (an empty codebook)",
+REASON_TEXT = MappingProxyType({"no_units": "there is nothing to rate (no trait in the codebook)",
                "no_pairable_unit": "no unit has values from both lineages",
                "no_variation": "the ratings do not vary, so agreement is undefined",
                "fewer_lineages": "fewer than two lineages rated",
@@ -219,6 +219,24 @@ def _foils(r: dict) -> list[str]:
     return out
 
 
+def _status_table(r: dict, kind: str) -> list[str]:
+    eras = list(r["corpus"])
+    out = [f"| Id | {kind.capitalize()} | Found by | {' | '.join(eras)} |", "|---|---|---|" + "---|" * len(eras)]
+    return out + [f"| {c['id']} | {c['name']} | {', '.join(c['lineages'])} | "
+                  + " | ".join(c["status"][e] for e in eras) + " |" for c in r["constructs"] if c["kind"] == kind]
+
+
+def _events(r: dict) -> list[str]:
+    out = ["## Things that happened", "",
+           "Constructs the codebook author marked as events: something done to the writer, or a circumstance, rather "
+           "than what the writer does, feels or believes. Raters coded them like traits, so each era shows whether "
+           "both lineages found it, but events are left out of the agreement gate and every comparison in this "
+           "report.", ""]
+    if not any(c["kind"] == "event" for c in r["constructs"]):
+        return [*out, "None: every construct is a trait.", ""]
+    return [*out, *_status_table(r, "event"), ""]
+
+
 def render(r: dict) -> str:
     out = ["# Blind extraction report", "",
            "## This is not a clinical assessment", "",
@@ -240,12 +258,13 @@ def render(r: dict) -> str:
     for lin, fp in sorted(r["fingerprints"].items()):
         out.append(f"- {lin}: {fp['cli_version']}, model {fp['resolved_model']}.")
     out += ["", "## Agreement (computed by script)", ""]
-    out += _arm("Inductive constructs", r["agreement"]["inductive"])
+    out += _arm("Inductive traits", r["agreement"]["inductive"])
     out += _arm("Deductive facets (strict)", r["agreement"]["deductive"])
     out += _stances(r["agreement"])
-    d = r["agreement"]["inductive_with_foils"]
-    out.append(f"- Constructs plus foils (diagnostic, not a gate; {d['units']} units): α = {num(d['alpha'])}; units "
-               f"with both lineages: {pct(d['paired_fraction'])}; raw agreement on them: {pct(d['raw_agreement'])}.")
+    for key, label in (("inductive_with_foils", "Traits plus foils"), ("inductive_events", "Events")):
+        d = r["agreement"][key]
+        out.append(f"- {label} (diagnostic, not a gate; {d['units']} units): α = {num(d['alpha'])}; units with both "
+                   f"lineages: {pct(d['paired_fraction'])}; raw agreement on them: {pct(d['raw_agreement'])}.")
     out.append(f"- Verdicts downgraded to insufficient by the recurrence and counter-evidence rules: "
                f"{r['agreement']['downgrades']}.")
     n = r["invalid_outputs"]
@@ -262,15 +281,10 @@ def render(r: dict) -> str:
         checks = "; ".join(f"{name}: {_check_text(check)}" for name, check in audit.items())
         out.append(f"- Very high agreement triggered the integrity audit: {verdict} ({checks}). High agreement is "
                    "reported with the caveat that both lineages share a method and may share training data.")
-    eras = list(r["corpus"])
-    out += ["", *_foils(r), "## Constructs", "", f"| Id | Construct | Found by | {' | '.join(eras)} |",
-            "|---|---|---|" + "---|" * len(eras)]
-    for c in r["constructs"]:
-        out.append(f"| {c['id']} | {c['name']} | {', '.join(c['lineages'])} | "
-                   + " | ".join(c["status"][e] for e in eras) + " |")
-    out += ["", "Supported: both lineages find the construct in the era. Contested: they disagree. Not-shown: "
+    out += ["", *_foils(r), "## Traits", "", *_status_table(r, "trait"), "",
+            "Supported: both lineages find the construct in the era. Contested: they disagree. Not-shown: "
             "neither finds it. One-lineage: one side has no verdict; never counted as supported. No-verdict: neither "
-            "lineage has one (tied or missing runs).", "", *_temporal(r)]
+            "lineage has one (tied or missing runs).", "", *_temporal(r), *_events(r)]
     p = r["predictions"]
     out += ["## Your predictions", ""]
     if not p["inductive_reportable"]:

@@ -6,6 +6,10 @@ record. You will not see the record. Turn the candidates into atomic constructs:
   "followed by" or "vs" in a name.
 - Each construct has a definition and a sufficiency rule: what the text must show, across separate episodes, for the
   construct to count as present in an era.
+- Each construct has a kind. `trait`: something the writer does, feels or believes. `event`: something done to the
+  writer, or a circumstance they lived in (a loss, an illness, another person's conduct, poverty). A construct whose
+  core is the writer's response (a stance towards a person, a way of coping) is a `trait`, even when its definition
+  names what someone else did.
 - Every candidate lands in exactly one place: in one construct's trace, or in the appendix. Use the appendix to
   record a candidate merged into another construct's wording, split across several constructs (list it in each of
   those traces too), or excluded (with the reason).

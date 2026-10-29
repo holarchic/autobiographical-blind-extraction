@@ -11,6 +11,7 @@ from . import (
     calibration,
     config,
     divergence,
+    extract,
     facetmap,
     invoke,
     ipip,
@@ -44,9 +45,10 @@ def estimate(ws: store.Workspace) -> lifecycle.Preflight:
 
 
 def _crosswalk(ws: store.Workspace, cfg: config.Config, book: dict) -> None:
-    store.write_text_atomic(artifacts.path_of(ws, "constructs:all"), facetmap.render_definitions(book["constructs"]))
+    """The coders see traits only: an event is in no comparison."""
+    store.write_text_atomic(artifacts.path_of(ws, "constructs:all"), facetmap.render_definitions(extract.traits(book)))
     preds = seal.predictions(ws.path("sealed/self-prediction.md").read_text(encoding="utf-8"))
-    pairs = {(p, c["id"]) for p in preds for c in book["constructs"]}
+    pairs = {(p, c["id"]) for p in preds for c in extract.traits(book)}
 
     def validate(out) -> list[str]:
         got = [(x["prediction_id"], x["construct_id"]) for x in out["codes"]]
@@ -155,7 +157,8 @@ def compute(ws: store.Workspace, cfg: config.Config) -> dict:
     codes = {c: coded[c]["codes"] for c in cfg.crosswalk_coders}
     preds = list(seal.predictions(ws.path("sealed/self-prediction.md").read_text(encoding="utf-8")))
     inductive_ok = agree["inductive"]["verdict"] in REPORTABLE
-    supported = {cid for cid, eras in agree["construct_status"].items() if "supported" in eras.values()}
+    trait_ids = {c["id"] for c in extract.traits(book)}
+    supported = {cid for cid, eras in agree["construct_status"].items() if "supported" in eras.values()} & trait_ids
     instrument = ipip.load_instrument(ws)
     self_report = ipip.score(ipip.parse_responses(ws.path("sealed/ipip-120.csv").read_text(encoding="utf-8"),
                                                   instrument), instrument)
@@ -170,22 +173,23 @@ def compute(ws: store.Workspace, cfg: config.Config) -> dict:
         "spot_check": spotcheck.summary(store.read_json(ws.path(spotcheck.PATH))),
         "fingerprints": {lin: {k: v for k, v in q.items() if k != "evidence"} for lin, q in qualification.items()},
         "agreement": {k: agree[k] for k in ("inductive", "deductive", "deductive_lenient", "stances", "downgrades",
-                                       "inductive_with_foils")}
+                                       "inductive_with_foils", "inductive_events")}
         | {"integrity_audit": agree.get("integrity_audit")},
         "foils": agree["foils"],
         "audit_flags": agree["audit_flags"],
         "invalid_outputs": {"by_stage": invalid, "total": sum(invalid.values()), "max_attempts": invoke.MAX_ATTEMPTS},
         "trimmed_outputs": {"by_stage": trimmed, "total": sum(trimmed.values())},
-        "constructs": [{"id": c["id"], "name": c["name"], "definition": c["definition"], "lineages": c["lineages"],
-                        "status": agree["construct_status"][c["id"]]} for c in book["constructs"]],
+        "constructs": [{"id": c["id"], "name": c["name"], "kind": c["kind"], "definition": c["definition"],
+                        "lineages": c["lineages"], "status": agree["construct_status"][c["id"]]}
+                       for c in book["constructs"]],
         "temporal": temporal.shown(agree["temporal"]) | {"inductive_reportable": inductive_ok},
         "predictions": prediction_rates(codes, preds, supported if inductive_ok else set())
         | {"inductive_reportable": inductive_ok},
         "facet_bands": facet_comparison(observer, self_report, instrument),
         "deductive_vs_ipip": domain_comparison(observer, self_report)
         | {"deductive_reportable": agree["deductive"]["verdict"] in REPORTABLE},
-        "correspondences": facetmap.correspondences(facet_map, book["constructs"], supported, self_report["facets"],
-                                                    inductive_ok),
+        "correspondences": facetmap.correspondences(facet_map, extract.traits(book), supported,
+                                                    self_report["facets"], inductive_ok),
         "divergence": divergence.build_map(facet_map, supported, observer["facets"], self_report["facets"],
                                            {c: coded[c]["predictions"] for c in cfg.crosswalk_coders}, inductive_ok),
         "domain_names": instrument["domains"],
