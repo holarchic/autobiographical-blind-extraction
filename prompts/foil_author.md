@@ -12,7 +12,9 @@ shows it. Give each one type, with the evidence that type needs, citing only sen
   ids and the event) and at least one counter-sentence that defeats it.
 - anchored: a trait this era plainly shows. Cite at least two support occurrences that are separate episodes in
   different, non-adjacent paragraphs, each with its sentence ids and the event.
-Write only items whose answer for this era is clear from the text; prefer fewer items to doubtful ones.
+Per item, cite at most 6 support occurrences and at most 6 counter-sentences (the clearest), each occurrence with at
+most 12 sentence ids. Write only items whose answer for this era is clear from the text; prefer fewer items to doubtful
+ones.
 
 Respond with only a JSON object that matches this schema:
 {{schema}}

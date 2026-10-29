@@ -6,8 +6,8 @@ this one.
 
 Anchors: 1 = clear, repeated low-pole evidence; 4 = mixed evidence; 7 = clear, repeated high-pole evidence. Use the
 points between for weaker or less consistent evidence. Cite at least one ledger sentence id for every score you give,
-from any facet's evidence. When nothing in the ledgers bears on a facet, set its score to null (insufficient). Score
-all 30 facets.
+up to 12, from any facet's evidence. When nothing in the ledgers bears on a facet, set its score to null
+(insufficient). Score all 30 facets.
 
 Facets:
 {{facets}}

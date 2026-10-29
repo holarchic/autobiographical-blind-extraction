@@ -4,7 +4,7 @@ from their life record. You see only the ledgers. Score strictly: use only cited
 
 Anchors: 1 = clear, repeated low-pole evidence; 4 = mixed evidence; 7 = clear, repeated high-pole evidence. Use the
 points between for weaker or less consistent evidence. When the ledgers give too little to score a facet, set its
-score to null (insufficient). Cite the sentence ids each score rests on. Score all 30 facets.
+score to null (insufficient). Cite the sentence ids each score rests on, at most 12 (the clearest). Score all 30 facets.
 
 Facets:
 {{facets}}
