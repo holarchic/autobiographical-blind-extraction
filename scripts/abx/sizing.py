@@ -133,16 +133,15 @@ def check_eras(ws: store.Workspace, cfg: config.Config, eras: list[dict], sents:
     for position, era in enumerate(eras):
         era_sents = [s for s in sents if s.segment_id in set(era["segment_ids"])]
         context = calibration.paragraph_context(redacted, [segments[sid] for sid in era["segment_ids"]])
-        # The judge's excerpts carry a context line per paragraph; the zoner's chunks do not.
-        parts = {"zoner": longest_part(redacted, era_sents),
-                 "calibration_judge": longest_part(redacted, era_sents, context)}
+        chunk_part = longest_part(redacted, era_sents)
+        excerpt_part = longest_part(redacted, era_sents, context)  # excerpts carry a context line per paragraph
         words = sum(len(redacted[s.start:s.end].split()) for s in era_sents)
         body = text.render_zoned(redacted, era["segment_ids"], era_sents, {s.id for s in era_sents})
         label = text.effective_label(era)
         for role, policy in ROLES.items():
             if not policy.per_era:
                 continue
-            sized = parts[role] if policy.chunked else body
+            sized = (excerpt_part if "excerpt" in policy.kinds else chunk_part) if policy.chunked else body
             for lin in _lineages(cfg, role):
                 if _fits(prompt_for(ws, role, era_ids, position, label, sized), lin):
                     continue

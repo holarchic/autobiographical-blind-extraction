@@ -5,7 +5,6 @@ import json
 import re
 import unittest
 
-from abx import prompts
 from abx.roles import ROLES
 
 from . import REPO
@@ -13,6 +12,7 @@ from . import REPO
 NUMBER_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
                 "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16,
                 "seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20, "eighty": 80}
+SLOT = re.compile(r"\{\{[a-z_]+\}\}")
 STATED = re.compile(r"\b(?:at\s+most|up\s+to|to|exactly)\s+(\d+|[a-z]+)\b", re.I)
 
 
@@ -30,7 +30,7 @@ def caps(node, path: str = "") -> list[tuple[str, int]]:
 
 def stated(template: str) -> set[int]:
     """Numbers the prose before the schema states after a qualifier, with every slot removed."""
-    prose = prompts._SLOT.sub("", template.split("{{schema}}")[0])
+    prose = SLOT.sub("", template.split("{{schema}}")[0])
     values = set()
     for token in STATED.findall(prose):
         value = int(token) if token.isdigit() else NUMBER_WORDS.get(token.lower())

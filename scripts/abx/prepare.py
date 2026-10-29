@@ -1,5 +1,6 @@
 """`prepare`: local redaction and eras (review point 1), qualification, zoning, zoning calibration, the substrate."""
 
+import contextlib
 import shutil
 from pathlib import Path
 from typing import NamedTuple
@@ -68,7 +69,9 @@ def stage_method(ws: store.Workspace) -> None:
     stamp = ws.path(METHOD_STAMP)
     if not ws.path(invoke.QUALIFICATION).exists() and (not stamp.exists() or store.read_json(stamp) != current):
         for name in ("prompts", "schemas"):
-            shutil.rmtree(ws.path(f"prereg/{name}"), ignore_errors=True)
+            # Only absence is fine: a removal that fails must stop here, before older files are stamped as current.
+            with contextlib.suppress(FileNotFoundError):
+                shutil.rmtree(ws.path(f"prereg/{name}"))
     for name in ("prompts", "schemas"):
         if not ws.path(f"prereg/{name}").exists():
             shutil.copytree(REPO / name, ws.path(f"prereg/{name}"))

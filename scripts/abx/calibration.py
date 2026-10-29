@@ -19,8 +19,8 @@ from typing import NamedTuple
 from . import artifacts, config, eras, invoke, store, text
 from .errors import GateFired, UsageError
 
-__all__ = ["EXCERPTS", "LIMITS", "MIN_HELD_OUT", "PATH", "Draw", "Target", "allocate", "check", "collapse",
-           "excerpt_parts", "run", "sample", "score", "summary"]
+__all__ = ["CONTEXT_YEARS", "EXCERPTS", "LIMITS", "MIN_HELD_OUT", "PATH", "Draw", "Target", "allocate", "check",
+           "collapse", "excerpt_parts", "paragraph_context", "render_excerpt", "run", "sample", "score", "summary"]
 
 PATH = "prepare/calibration.json"
 EXCERPTS = artifacts.directory("excerpt")

@@ -158,6 +158,17 @@ class PrepareTest(unittest.TestCase):
         prepare.prepare(self.ws)
         self.assertIn("An edit under this version.", recode.read_text())  # same version: staged edits are kept
 
+    def test_a_failed_restaging_stops_before_the_stamp_moves(self):
+        prepare.prepare(self.ws)
+        stamp = self.ws.path(prepare.METHOD_STAMP)
+        older = {**store.read_json(stamp), "method_version": invoke.METHOD_VERSION - 1}
+        store.write_json(stamp, older)
+        with mock.patch.object(prepare.shutil, "rmtree", side_effect=PermissionError("locked")), \
+                self.assertRaises(PermissionError):
+            prepare.prepare(self.ws)
+        self.assertEqual(store.read_json(stamp), older)
+        self.assertFalse(self.ws.path(invoke.QUALIFICATION).exists())
+
     def test_a_qualified_workspace_keeps_its_staged_files(self):
         approve_fixture(self.ws)
         prepare.prepare(self.ws)
