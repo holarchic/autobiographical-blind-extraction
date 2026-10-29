@@ -134,6 +134,40 @@ class PrepareTest(unittest.TestCase):
         self.assertEqual(self.fw.prompts_logged(), [])
         self.assertFalse(self.ws.path(invoke.QUALIFICATION).exists())
 
+    def test_an_older_staging_is_replaced_until_qualification(self):
+        prepare.prepare(self.ws)
+        recode, stamp = self.ws.path("prereg/prompts/recode.md"), self.ws.path(prepare.METHOD_STAMP)
+        schema = self.ws.path("prereg/schemas/recode.json")
+        shipped = (prepare.REPO / "prompts" / "recode.md").read_text()
+        current = store.read_json(stamp)
+        self.assertEqual(current, {"isolation_policy": invoke.ISOLATION_POLICY,
+                                   "method_version": invoke.METHOD_VERSION})
+        for older in ({**current, "method_version": invoke.METHOD_VERSION - 1}, None):
+            with self.subTest(stamp=older):
+                recode.write_text("an older template")
+                schema.write_text("{}")
+                if older is None:
+                    stamp.unlink()
+                else:
+                    store.write_json(stamp, older)
+                prepare.prepare(self.ws)
+                self.assertEqual(recode.read_text(), shipped)
+                self.assertNotEqual(schema.read_text(), "{}")
+                self.assertEqual(store.read_json(stamp), current)
+        recode.write_text(shipped + "\nAn edit under this version.\n")
+        prepare.prepare(self.ws)
+        self.assertIn("An edit under this version.", recode.read_text())  # same version: staged edits are kept
+
+    def test_a_qualified_workspace_keeps_its_staged_files(self):
+        approve_fixture(self.ws)
+        prepare.prepare(self.ws)
+        self.assertTrue(self.ws.path(invoke.QUALIFICATION).exists())
+        recode = self.ws.path("prereg/prompts/recode.md")
+        recode.write_text(recode.read_text() + "\nStaged before this run.\n")
+        self.ws.path(prepare.METHOD_STAMP).unlink()
+        prepare.stage_method(self.ws)
+        self.assertIn("Staged before this run.", recode.read_text())
+
     def test_eras_zone_in_chunks_through_real_calls_and_resume_per_chunk(self):
         approve_fixture(self.ws)
         with mock.patch.object(abx_text, "ZONING_CHUNK", 60):

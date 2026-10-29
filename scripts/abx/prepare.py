@@ -36,6 +36,7 @@ RECEIPT_OUTPUT_GLOBS = ("prepare/redacted.txt", "prepare/offsets.json", "prepare
                         "run/calls/prepare/calibration_judge/*.json")
 
 REPO = Path(__file__).resolve().parents[2]
+METHOD_STAMP = "prereg/method.json"  # the method and isolation versions the staged prompts and schemas came from
 PROPOSAL_RETRIES, PROPOSAL_SHRINK = 5, 0.10
 NAMES_NOTE = ("A local scan pre-filled this list: names seen twice or after a title, each with a placeholder "
               "(names-preview.txt lists every candidate, likely places apart). Delete anything that is not a person "
@@ -57,10 +58,20 @@ ERA_RULE = ("You decide the eras, before any model call. Aim for at least 5, eac
 
 def stage_method(ws: store.Workspace) -> None:
     """Copy the repo's prompts, schemas and IPIP instrument in, and derive the facet catalog raters see
-    (codes and names only, never questionnaire items); freeze hashes them all in generation A."""
+    (codes and names only, never questionnaire items); freeze hashes them all in generation A.
+
+    Staged files are kept once copied, edits included. Until qualification, when no call has used them, files staged
+    by an older method or isolation version (by the stamp, or no stamp at all) are replaced by this version's."""
+    current = {"isolation_policy": invoke.ISOLATION_POLICY, "method_version": invoke.METHOD_VERSION}
+    stamp = ws.path(METHOD_STAMP)
+    if not ws.path(invoke.QUALIFICATION).exists() and (not stamp.exists() or store.read_json(stamp) != current):
+        for name in ("prompts", "schemas"):
+            shutil.rmtree(ws.path(f"prereg/{name}"), ignore_errors=True)
     for name in ("prompts", "schemas"):
         if not ws.path(f"prereg/{name}").exists():
             shutil.copytree(REPO / name, ws.path(f"prereg/{name}"))
+    if not stamp.exists() or store.read_json(stamp) != current:
+        store.write_json(stamp, current)
     if not ws.path(ipip.FROZEN_COPY).exists():
         ws.path(ipip.FROZEN_COPY).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(ipip.INSTRUMENT, ws.path(ipip.FROZEN_COPY))
