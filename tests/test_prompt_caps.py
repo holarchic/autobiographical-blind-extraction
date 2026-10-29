@@ -4,14 +4,16 @@ pasted schema. A wording drift check: it proves each cap value is stated, not wh
 import json
 import re
 import unittest
+from types import MappingProxyType
 
 from abx.roles import ROLES
 
 from . import REPO
 
-NUMBER_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
-                "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16,
-                "seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20, "eighty": 80}
+NUMBER_WORDS = MappingProxyType({
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+    "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17,
+    "eighteen": 18, "nineteen": 19, "twenty": 20, "eighty": 80})
 SLOT = re.compile(r"\{\{[a-z_]+\}\}")
 STATED = re.compile(r"\b(?:at\s+most|up\s+to|to|exactly)\s+(\d+|[a-z]+)\b", re.I)
 

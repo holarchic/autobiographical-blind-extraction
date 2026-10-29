@@ -23,7 +23,7 @@ from . import (
 )
 from .errors import TooLarge, UsageError
 
-__all__ = ["RECEIPT", "STAGE", "estimate", "prepare", "receipt_problems", "review_doc", "stage_method"]
+__all__ = ["METHOD_STAMP", "RECEIPT", "STAGE", "estimate", "prepare", "receipt_problems", "review_doc", "stage_method"]
 
 RECEIPT = "prepare/receipt.json"
 RECEIPT_INPUTS = ("text/original.txt", "config.json", "prepare/redactions.json", "prepare/eras.json",
