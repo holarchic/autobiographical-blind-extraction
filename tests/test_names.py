@@ -113,6 +113,9 @@ class MixedLanguageScanTest(unittest.TestCase):
         body = "We read [Primary source. Secondary source] twice and [Primary source. Secondary source] again."
         self.assertEqual(scanned(body), {})
         self.assertEqual(scanned("We saw [a note] Alice and [a note] Alice.")["Alice"].count, 2)
+        found = scanned("We saw [a note. Another note] Alice twice and [a note. Another note] Alice again.")
+        self.assertEqual(list(found), ["Alice"])
+        self.assertEqual(found["Alice"].count, 2)
 
     def test_a_titled_candidate_is_never_place_like(self):
         body = "I went to Dr. Ali twice and to Dr. Ali again."

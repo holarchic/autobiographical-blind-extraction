@@ -119,14 +119,16 @@ def _sightings(body: str, not_names: frozenset[str]) -> list[_Sighting]:
     return out
 
 
-def _units(text: str, sentences: Sequence[Sentence]) -> list[tuple[str, str]]:
-    """(segment id, text) per sentence, with a sentence that ends in a dotted title joined to the next one in its
-    paragraph: the splitter ends a sentence at `Miss.` but the scan must see the name after it."""
+def _units(text: str, sentences: Sequence[Sentence], bracketed: Sequence[tuple[int, int]]) -> list[tuple[str, str]]:
+    """(segment id, text) per sentence, with a sentence that ends in a dotted title, or inside a bracketed span, joined
+    to the next one in its paragraph: the splitter ends a sentence at `Miss.` or at a full stop inside a label, but the
+    scan must see the name after it."""
     units: list[tuple[str, str]] = []
     joining = False
     start = 0
     for sent in sentences:
-        if joining and units and units[-1][0] == sent.segment_id:
+        inside = any(a < sent.start < b for a, b in bracketed)
+        if (joining or inside) and units and units[-1][0] == sent.segment_id:
             units[-1] = (sent.segment_id, text[start:sent.end])  # the original spacing between the two
         else:
             start = sent.start
@@ -141,10 +143,10 @@ def scan(text: str, sentences: Sequence[Sentence], not_names: Sequence[str] = ()
     first: dict[str, str] = {}
     titled: set[str] = set()
     elsewhere: set[str] = set()  # seen at least once not right after a locative
-    # Blanked over the whole text, before it is cut into sentences, so a full stop inside a label cannot split it;
-    # offsets are kept, and counts read the original.
+    # Labels are blanked, keeping offsets (counts read the original), and a sentence cut inside one is rejoined.
+    bracketed = [m.span() for m in _BRACKETED.finditer(text)]
     masked = _BRACKETED.sub(lambda m: " " * len(m.group(0)), text)
-    for segment_id, body in _units(masked, sentences):
+    for segment_id, body in _units(masked, sentences, bracketed):
         for seen in _sightings(body, frozenset(not_names)):
             first.setdefault(seen.name, segment_id)
             if seen.titled:
